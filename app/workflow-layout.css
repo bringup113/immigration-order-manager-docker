@@ -1,0 +1,5 @@
+@media (min-width: 1024px) {
+  .workflow-side-column .lg\:grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

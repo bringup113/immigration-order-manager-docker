@@ -1,0 +1,420 @@
+[
+  {
+    "label": "indexing",
+    "concurrency": 5,
+    "seconds": 20,
+    "count": 3134,
+    "p50": 12,
+    "p95": 86,
+    "max": 100,
+    "rps": 156.6,
+    "errors": {},
+    "byPath": {
+      "/api/data/orders?page=80": {
+        "count": 392,
+        "p50": 7,
+        "p95": 76,
+        "max": 86
+      },
+      "/api/data/orders": {
+        "count": 392,
+        "p50": 7,
+        "p95": 76,
+        "max": 83
+      },
+      "/api/data/search?q=%E6%9D%90%E6%96%99": {
+        "count": 392,
+        "p50": 16,
+        "p95": 84,
+        "max": 88
+      },
+      "/api/data/search?q=zhangsan2999": {
+        "count": 392,
+        "p50": 56,
+        "p95": 91,
+        "max": 100
+      },
+      "/api/data/search?q=needle2999": {
+        "count": 392,
+        "p50": 60,
+        "p95": 90,
+        "max": 98
+      },
+      "/api/orders/LOAD-002999?section=workflow": {
+        "count": 392,
+        "p50": 10,
+        "p95": 80,
+        "max": 89
+      },
+      "/api/orders/LOAD-002999?section=finance": {
+        "count": 391,
+        "p50": 10,
+        "p95": 79,
+        "max": 87
+      },
+      "/api/data/dashboard": {
+        "count": 391,
+        "p50": 8,
+        "p95": 76,
+        "max": 82
+      }
+    },
+    "samples": [
+      "migra-loadtest-app 147.9MiB / 768MiB 39.22%\nmigra-loadtest-db 107.6MiB / 640MiB 99.99%",
+      "migra-loadtest-app 148.2MiB / 768MiB 25.70%\nmigra-loadtest-db 109MiB / 640MiB 100.92%",
+      "migra-loadtest-app 147.9MiB / 768MiB 48.39%\nmigra-loadtest-db 110.5MiB / 640MiB 100.28%",
+      "migra-loadtest-app 147.8MiB / 768MiB 4.96%\nmigra-loadtest-db 111.3MiB / 640MiB 4.94%"
+    ],
+    "pending": 1239
+  },
+  {
+    "label": "steady",
+    "concurrency": 1,
+    "seconds": 25,
+    "count": 2545,
+    "p50": 4,
+    "p95": 23,
+    "max": 32,
+    "rps": 101.8,
+    "errors": {},
+    "byPath": {
+      "/api/data/orders": {
+        "count": 319,
+        "p50": 4,
+        "p95": 5,
+        "max": 8
+      },
+      "/api/data/orders?page=80": {
+        "count": 318,
+        "p50": 4,
+        "p95": 5,
+        "max": 10
+      },
+      "/api/data/search?q=needle2999": {
+        "count": 318,
+        "p50": 23,
+        "p95": 25,
+        "max": 27
+      },
+      "/api/data/search?q=%E6%9D%90%E6%96%99": {
+        "count": 318,
+        "p50": 13,
+        "p95": 14,
+        "max": 17
+      },
+      "/api/data/search?q=zhangsan2999": {
+        "count": 318,
+        "p50": 22,
+        "p95": 24,
+        "max": 32
+      },
+      "/api/orders/LOAD-002999?section=workflow": {
+        "count": 318,
+        "p50": 4,
+        "p95": 4,
+        "max": 11
+      },
+      "/api/orders/LOAD-002999?section=finance": {
+        "count": 318,
+        "p50": 3,
+        "p95": 4,
+        "max": 8
+      },
+      "/api/data/dashboard": {
+        "count": 318,
+        "p50": 4,
+        "p95": 5,
+        "max": 13
+      }
+    },
+    "samples": [
+      "migra-loadtest-app 148.3MiB / 768MiB 14.41%\nmigra-loadtest-db 125MiB / 640MiB 74.74%",
+      "migra-loadtest-app 148.2MiB / 768MiB 10.12%\nmigra-loadtest-db 125.8MiB / 640MiB 75.52%",
+      "migra-loadtest-app 148.7MiB / 768MiB 13.99%\nmigra-loadtest-db 125.3MiB / 640MiB 75.36%",
+      "migra-loadtest-app 148.3MiB / 768MiB 11.71%\nmigra-loadtest-db 125MiB / 640MiB 75.18%"
+    ],
+    "pending": 0
+  },
+  {
+    "label": "steady",
+    "concurrency": 5,
+    "seconds": 25,
+    "count": 2196,
+    "p50": 72,
+    "p95": 176,
+    "max": 196,
+    "rps": 87.6,
+    "errors": {},
+    "byPath": {
+      "/api/data/orders": {
+        "count": 275,
+        "p50": 9,
+        "p95": 83,
+        "max": 95
+      },
+      "/api/data/orders?page=80": {
+        "count": 275,
+        "p50": 8,
+        "p95": 83,
+        "max": 86
+      },
+      "/api/orders/LOAD-002999?section=workflow": {
+        "count": 274,
+        "p50": 11,
+        "p95": 84,
+        "max": 95
+      },
+      "/api/orders/LOAD-002999?section=finance": {
+        "count": 274,
+        "p50": 9,
+        "p95": 80,
+        "max": 97
+      },
+      "/api/data/search?q=%E6%9D%90%E6%96%99": {
+        "count": 275,
+        "p50": 91,
+        "p95": 100,
+        "max": 112
+      },
+      "/api/data/dashboard": {
+        "count": 274,
+        "p50": 10,
+        "p95": 83,
+        "max": 170
+      },
+      "/api/data/search?q=zhangsan2999": {
+        "count": 274,
+        "p50": 106,
+        "p95": 183,
+        "max": 195
+      },
+      "/api/data/search?q=needle2999": {
+        "count": 275,
+        "p50": 107,
+        "p95": 184,
+        "max": 196
+      }
+    },
+    "samples": [
+      "migra-loadtest-app 148MiB / 768MiB 27.16%\nmigra-loadtest-db 125.6MiB / 640MiB 99.52%",
+      "migra-loadtest-app 148MiB / 768MiB 25.56%\nmigra-loadtest-db 125.5MiB / 640MiB 101.92%",
+      "migra-loadtest-app 147.8MiB / 768MiB 17.63%\nmigra-loadtest-db 125.5MiB / 640MiB 100.77%",
+      "migra-loadtest-app 147.7MiB / 768MiB 26.42%\nmigra-loadtest-db 125.8MiB / 640MiB 99.97%",
+      "migra-loadtest-app 148.7MiB / 768MiB 17.66%\nmigra-loadtest-db 125MiB / 640MiB 100.19%"
+    ],
+    "pending": 0
+  },
+  {
+    "label": "steady",
+    "concurrency": 10,
+    "seconds": 25,
+    "count": 2011,
+    "p50": 103,
+    "p95": 206,
+    "max": 297,
+    "rps": 80.1,
+    "errors": {},
+    "byPath": {
+      "/api/data/orders": {
+        "count": 252,
+        "p50": 100,
+        "p95": 177,
+        "max": 186
+      },
+      "/api/data/orders?page=80": {
+        "count": 252,
+        "p50": 100,
+        "p95": 175,
+        "max": 191
+      },
+      "/api/orders/LOAD-002999?section=workflow": {
+        "count": 251,
+        "p50": 99,
+        "p95": 174,
+        "max": 185
+      },
+      "/api/data/search?q=%E6%9D%90%E6%96%99": {
+        "count": 251,
+        "p50": 114,
+        "p95": 193,
+        "max": 200
+      },
+      "/api/data/dashboard": {
+        "count": 251,
+        "p50": 95,
+        "p95": 104,
+        "max": 182
+      },
+      "/api/orders/LOAD-002999?section=finance": {
+        "count": 251,
+        "p50": 100,
+        "p95": 173,
+        "max": 187
+      },
+      "/api/data/search?q=needle2999": {
+        "count": 252,
+        "p50": 200,
+        "p95": 284,
+        "max": 293
+      },
+      "/api/data/search?q=zhangsan2999": {
+        "count": 251,
+        "p50": 195,
+        "p95": 212,
+        "max": 297
+      }
+    },
+    "samples": [
+      "migra-loadtest-app 150.7MiB / 768MiB 19.47%\nmigra-loadtest-db 125.6MiB / 640MiB 99.94%",
+      "migra-loadtest-app 150.5MiB / 768MiB 25.90%\nmigra-loadtest-db 125MiB / 640MiB 99.61%",
+      "migra-loadtest-app 150.5MiB / 768MiB 15.05%\nmigra-loadtest-db 125.2MiB / 640MiB 100.01%",
+      "migra-loadtest-app 150.4MiB / 768MiB 25.73%\nmigra-loadtest-db 125.8MiB / 640MiB 101.30%",
+      "migra-loadtest-app 150.5MiB / 768MiB 14.47%\nmigra-loadtest-db 125.5MiB / 640MiB 94.42%"
+    ],
+    "pending": 0
+  },
+  {
+    "label": "steady",
+    "concurrency": 20,
+    "seconds": 25,
+    "count": 2052,
+    "p50": 216,
+    "p95": 383,
+    "max": 482,
+    "rps": 81.4,
+    "errors": {},
+    "byPath": {
+      "/api/data/dashboard": {
+        "count": 256,
+        "p50": 187,
+        "p95": 204,
+        "max": 282
+      },
+      "/api/data/orders": {
+        "count": 257,
+        "p50": 208,
+        "p95": 293,
+        "max": 303
+      },
+      "/api/data/search?q=%E6%9D%90%E6%96%99": {
+        "count": 257,
+        "p50": 286,
+        "p95": 310,
+        "max": 383
+      },
+      "/api/data/orders?page=80": {
+        "count": 257,
+        "p50": 209,
+        "p95": 293,
+        "max": 302
+      },
+      "/api/orders/LOAD-002999?section=workflow": {
+        "count": 256,
+        "p50": 209,
+        "p95": 295,
+        "max": 302
+      },
+      "/api/orders/LOAD-002999?section=finance": {
+        "count": 256,
+        "p50": 210,
+        "p95": 294,
+        "max": 302
+      },
+      "/api/data/search?q=needle2999": {
+        "count": 257,
+        "p50": 309,
+        "p95": 398,
+        "max": 410
+      },
+      "/api/data/search?q=zhangsan2999": {
+        "count": 256,
+        "p50": 306,
+        "p95": 391,
+        "max": 482
+      }
+    },
+    "samples": [
+      "migra-loadtest-app 149.3MiB / 768MiB 15.13%\nmigra-loadtest-db 126.5MiB / 640MiB 102.22%",
+      "migra-loadtest-app 149.2MiB / 768MiB 14.37%\nmigra-loadtest-db 125.8MiB / 640MiB 100.04%",
+      "migra-loadtest-app 148.7MiB / 768MiB 26.91%\nmigra-loadtest-db 126.3MiB / 640MiB 102.80%",
+      "migra-loadtest-app 149.9MiB / 768MiB 16.43%\nmigra-loadtest-db 126.2MiB / 640MiB 99.94%",
+      "migra-loadtest-app 149.7MiB / 768MiB 15.42%\nmigra-loadtest-db 125.9MiB / 640MiB 100.51%"
+    ],
+    "pending": 0
+  },
+  {
+    "label": "sustained",
+    "concurrency": 5,
+    "seconds": 60,
+    "count": 5134,
+    "p50": 75,
+    "p95": 178,
+    "max": 276,
+    "rps": 85.5,
+    "errors": {},
+    "byPath": {
+      "/api/data/orders": {
+        "count": 642,
+        "p50": 9,
+        "p95": 82,
+        "max": 89
+      },
+      "/api/data/orders?page=80": {
+        "count": 642,
+        "p50": 8,
+        "p95": 82,
+        "max": 91
+      },
+      "/api/orders/LOAD-002999?section=workflow": {
+        "count": 642,
+        "p50": 13,
+        "p95": 87,
+        "max": 181
+      },
+      "/api/orders/LOAD-002999?section=finance": {
+        "count": 641,
+        "p50": 9,
+        "p95": 82,
+        "max": 101
+      },
+      "/api/data/search?q=%E6%9D%90%E6%96%99": {
+        "count": 642,
+        "p50": 91,
+        "p95": 99,
+        "max": 191
+      },
+      "/api/data/dashboard": {
+        "count": 641,
+        "p50": 10,
+        "p95": 83,
+        "max": 92
+      },
+      "/api/data/search?q=zhangsan2999": {
+        "count": 642,
+        "p50": 108,
+        "p95": 185,
+        "max": 276
+      },
+      "/api/data/search?q=needle2999": {
+        "count": 642,
+        "p50": 108,
+        "p95": 185,
+        "max": 202
+      }
+    },
+    "samples": [
+      "migra-loadtest-app 149.5MiB / 768MiB 15.48%\nmigra-loadtest-db 125.9MiB / 640MiB 99.87%",
+      "migra-loadtest-app 150.2MiB / 768MiB 15.20%\nmigra-loadtest-db 126MiB / 640MiB 99.50%",
+      "migra-loadtest-app 150MiB / 768MiB 14.54%\nmigra-loadtest-db 126MiB / 640MiB 101.60%",
+      "migra-loadtest-app 150MiB / 768MiB 24.70%\nmigra-loadtest-db 125.9MiB / 640MiB 99.82%",
+      "migra-loadtest-app 149.6MiB / 768MiB 13.95%\nmigra-loadtest-db 126.2MiB / 640MiB 98.99%",
+      "migra-loadtest-app 149.6MiB / 768MiB 15.03%\nmigra-loadtest-db 126.5MiB / 640MiB 99.26%",
+      "migra-loadtest-app 149.9MiB / 768MiB 16.21%\nmigra-loadtest-db 125.6MiB / 640MiB 101.14%",
+      "migra-loadtest-app 149.7MiB / 768MiB 21.80%\nmigra-loadtest-db 125.9MiB / 640MiB 99.76%",
+      "migra-loadtest-app 150.2MiB / 768MiB 14.43%\nmigra-loadtest-db 126.2MiB / 640MiB 100.50%",
+      "migra-loadtest-app 150.1MiB / 768MiB 23.91%\nmigra-loadtest-db 126.4MiB / 640MiB 99.87%",
+      "migra-loadtest-app 150.9MiB / 768MiB 13.71%\nmigra-loadtest-db 126.3MiB / 640MiB 100.65%"
+    ],
+    "pending": 0
+  }
+]

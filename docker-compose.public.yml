@@ -1,0 +1,51 @@
+services:
+  migra:
+    ports: !reset []
+    environment:
+      APP_ORIGIN: "https://${MIGRA_DOMAIN:?请设置正式域名}"
+      PUBLIC_DEPLOYMENT: "1"
+      REQUIRE_PRIVILEGED_MFA: "1"
+    networks:
+      - migra_backend
+      - migra_frontend
+
+  postgres:
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: migra-caddy
+    restart: unless-stopped
+    environment:
+      MIGRA_DOMAIN: "${MIGRA_DOMAIN:?请设置正式域名}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      migra:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - migra_frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  migra_frontend:

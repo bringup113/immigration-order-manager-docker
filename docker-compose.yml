@@ -1,0 +1,211 @@
+services:
+  migra:
+    build:
+      context: .
+      args:
+        APP_UID: "${APP_UID:?请先运行 npm run docker:prepare}"
+        APP_GID: "${APP_GID:?请先运行 npm run docker:prepare}"
+    container_name: migra-order-manager
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    environment:
+      APP_DEPLOYMENT: docker
+      PUBLIC_PORT: "${APP_PORT:-3000}"
+      APP_AUTH_SECRET: "${APP_AUTH_SECRET:-}"
+      APP_ORIGIN: "${APP_ORIGIN:-}"
+      PUBLIC_DEPLOYMENT: "${PUBLIC_DEPLOYMENT:-0}"
+      REQUIRE_PRIVILEGED_MFA: "${REQUIRE_PRIVILEGED_MFA:-0}"
+      SESSION_IDLE_MINUTES: "${SESSION_IDLE_MINUTES:-60}"
+      SESSION_ABSOLUTE_HOURS: "${SESSION_ABSOLUTE_HOURS:-12}"
+      SESSION_RETENTION_DAYS: "${SESSION_RETENTION_DAYS:-30}"
+      DATABASE_URL: "postgresql://${POSTGRES_RUNTIME_USER:?请先运行 npm run docker:prepare}:${POSTGRES_RUNTIME_PASSWORD:?请先运行 npm run docker:prepare}@postgres:5432/${POSTGRES_DB:-migra}"
+      DB_POOL_MAX: "${DB_POOL_MAX:-5}"
+      DB_CONNECTION_TIMEOUT_MS: "${DB_CONNECTION_TIMEOUT_MS:-3000}"
+      DB_STATEMENT_TIMEOUT_MS: "${DB_STATEMENT_TIMEOUT_MS:-15000}"
+      DB_SLOW_QUERY_MS: "${DB_SLOW_QUERY_MS:-500}"
+      MRZ_SIDECAR_URL: "${MRZ_SIDECAR_URL:-http://mrzscanner_poc:8080}"
+      BACKUP_STATUS_ROOT: /app/backups
+      UPLOAD_ROOT: /app/data/files
+      POSTGRES_MIGRATIONS_DIR: /app/postgres/migrations
+      SKIP_DATABASE_MIGRATIONS: "1"
+    depends_on:
+      postgres_migrate:
+        condition: service_completed_successfully
+      mrzscanner_poc:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./backups/postgres:/app/backups:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - migra_backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mrzscanner_poc:
+    # Apple Silicon Docker Desktop runs this pinned amd64 dependency set
+    # through emulation. The service name is retained for MRZ_SIDECAR_URL
+    # compatibility; it is now part of the main stack, not a separate PoC.
+    platform: linux/amd64
+    build:
+      context: ./mrz-sidecar
+    container_name: migra-mrzscanner
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MRZ_POC_PORT:-8090}:8080"
+    environment:
+      MRZ_QUEUE_SIZE: "${MRZ_QUEUE_SIZE:-3}"
+      MRZ_MAX_QUEUE_BYTES: "${MRZ_MAX_QUEUE_BYTES:-104857600}"
+      MRZ_MAX_FILE_BYTES: "${MRZ_MAX_FILE_BYTES:-20971520}"
+      MRZ_SCAN_TIMEOUT_SECONDS: "${MRZ_SCAN_TIMEOUT_SECONDS:-60}"
+      MRZ_CENTER_CROP: "${MRZ_CENTER_CROP:-0}"
+      MRZ_POSTPROCESS: "${MRZ_POSTPROCESS:-0}"
+      MRZ_TMP_DIR: /tmp/mrz-sidecar
+    networks:
+      - migra_backend
+    # Keep a memory guard while allowing the CPU-bound model to use the
+    # Docker Desktop allocation.  Recognition remains single-worker and
+    # queue/file/timeout limits still protect the host from bursts.
+    mem_limit: "${MRZ_SIDECAR_MEM_LIMIT:-1536m}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  mrzscanner_bench:
+    image: node:24-bookworm-slim
+    profiles: ["bench"]
+    working_dir: /work
+    volumes:
+      - .:/work:ro
+    environment:
+      MRZ_SIDECAR_URL: http://mrzscanner_poc:8080
+    networks:
+      - migra_backend
+    depends_on:
+      mrzscanner_poc:
+        condition: service_healthy
+    entrypoint: ["node", "scripts/benchmark-mrz-sidecar.mjs"]
+    command: ["--runs", "10", "--parallel", "3"]
+
+  postgres_backup:
+    image: postgres:17-bookworm
+    container_name: migra-postgres-backup
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: "${POSTGRES_DB:-migra}"
+      PGUSER: "${POSTGRES_BACKUP_USER:?请先运行 npm run docker:prepare}"
+      PGPASSWORD: "${POSTGRES_BACKUP_PASSWORD:?请先运行 npm run docker:prepare}"
+      BACKUP_INTERVAL_SECONDS: "${BACKUP_INTERVAL_SECONDS:-86400}"
+      BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-30}"
+      BACKUP_MIN_BYTES: "${BACKUP_MIN_BYTES:-4096}"
+    depends_on:
+      postgres_migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./backups/postgres:/backups
+      - ./scripts/postgres-backup-loop.sh:/usr/local/bin/postgres-backup-loop.sh:ro
+      - ./scripts/postgres-backup-once.sh:/usr/local/bin/postgres-backup-once.sh:ro
+    entrypoint: ["sh", "/usr/local/bin/postgres-backup-loop.sh"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - migra_backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres_migrate:
+    build:
+      context: .
+      args:
+        APP_UID: "${APP_UID:?请先运行 npm run docker:prepare}"
+        APP_GID: "${APP_GID:?请先运行 npm run docker:prepare}"
+    container_name: migra-postgres-migrate
+    restart: "no"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-migra}"
+      POSTGRES_USER: "${POSTGRES_USER:-migra}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}"
+      POSTGRES_MIGRATOR_USER: "${POSTGRES_MIGRATOR_USER:?请先运行 npm run docker:prepare}"
+      POSTGRES_MIGRATOR_PASSWORD: "${POSTGRES_MIGRATOR_PASSWORD:?请先运行 npm run docker:prepare}"
+      POSTGRES_RUNTIME_USER: "${POSTGRES_RUNTIME_USER:?请先运行 npm run docker:prepare}"
+      POSTGRES_RUNTIME_PASSWORD: "${POSTGRES_RUNTIME_PASSWORD:?请先运行 npm run docker:prepare}"
+      POSTGRES_BACKUP_USER: "${POSTGRES_BACKUP_USER:?请先运行 npm run docker:prepare}"
+      POSTGRES_BACKUP_PASSWORD: "${POSTGRES_BACKUP_PASSWORD:?请先运行 npm run docker:prepare}"
+      POSTGRES_MIGRATIONS_DIR: /app/postgres/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["node", "scripts/database-maintenance.mjs"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - migra_backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:17-bookworm
+    container_name: migra-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-migra}"
+      POSTGRES_USER: "${POSTGRES_USER:-migra}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-migra} -d ${POSTGRES_DB:-migra}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - migra_backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+    name: migra-postgres-data
+
+networks:
+  migra_backend:
+    name: migra-backend

@@ -1,0 +1,14 @@
+{$MIGRA_DOMAIN} {
+  encode zstd gzip
+  request_body {
+    max_size 21MB
+  }
+  reverse_proxy migra:3000 {
+    header_up -X-Forwarded-For
+    header_up -X-Forwarded-Host
+    header_up -X-Forwarded-Proto
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto https
+  }
+}

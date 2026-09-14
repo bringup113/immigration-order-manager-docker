@@ -1,0 +1,148 @@
+name: Verify and publish Docker image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Permission and audit unit tests
+        run: node --test tests/permissions.test.mjs tests/audit-coverage.test.mjs
+
+      - name: Backup failure and atomic-publish tests
+        run: npm run test:backup
+
+      - name: Prepare isolated Docker environment
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=CiOnly-Owner-Password-2026/' .env
+          node scripts/prepare-docker-env.mjs
+
+      - name: Docker production build and startup
+        run: docker compose up -d --build
+
+      - name: Wait for application health
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/api/auth/login >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose ps -a
+          exit 1
+
+      - name: PostgreSQL constraints and complete business lifecycles
+        env:
+          MIGRA_TEST_UPLOAD_ROOT: ${{ github.workspace }}/data/files
+          MIGRA_BASE_URL: http://127.0.0.1:3000
+          MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+        run: |
+          node scripts/integration-test-user.mjs create "$MIGRA_TEST_CREDENTIAL_FILE"
+          npm run test:integration
+
+      - name: Install pinned browser test runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tools" --package-lock=false --ignore-scripts playwright@1.62.1
+          node "$RUNNER_TEMP/browser-tools/node_modules/playwright/cli.js" install --with-deps chromium
+
+      - name: Browser search refresh regression
+        timeout-minutes: 5
+        env:
+          MIGRA_BASE_URL: http://127.0.0.1:3000
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/browser-tools/node_modules/playwright
+        run: npm run test:browser
+
+      - name: Session, password and device security
+        env:
+          MIGRA_BASE_URL: http://127.0.0.1:3000
+          MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+        run: node --test tests/auth-security.test.mjs
+
+      - name: Runtime, database-role and backup-role isolation
+        run: npm run deployment:verify
+
+      - name: Real isolated restore drill
+        run: |
+          docker compose exec -T postgres_backup sh /usr/local/bin/postgres-backup-once.sh
+          latest=$(ls -t backups/postgres/migra-*.dump | head -n 1)
+          ./scripts/restore-drill-postgres.sh "$latest"
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Remove integration test user
+        if: always()
+        env:
+          MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+        run: node scripts/integration-test-user.mjs delete "$MIGRA_TEST_CREDENTIAL_FILE" || true
+
+      - name: Stop isolated environment
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+
+      - name: Build and publish verified image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

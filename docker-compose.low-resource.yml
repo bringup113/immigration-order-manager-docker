@@ -1,0 +1,24 @@
+# Optional caps for application/database/backup. MRZ inherits the base 1536 MiB
+# limit with no CPU quota. The complete stack is not certified for a 2 GiB host.
+services:
+  migra:
+    mem_limit: 768m
+    environment:
+      NODE_OPTIONS: --max-old-space-size=384
+      DB_POOL_MAX: "4"
+  postgres:
+    mem_limit: 640m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+      - -c
+      - max_parallel_workers_per_gather=0
+  postgres_backup:
+    mem_limit: 128m

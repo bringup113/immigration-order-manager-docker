@@ -1,0 +1,38 @@
+.detail-tabs-nav {
+  position: relative;
+  border-bottom: 1px solid #182235;
+  background: #fff;
+}
+
+.panel.detail-tabs-nav {
+  border-bottom-color: #182235;
+}
+
+.detail-tabs-nav .detail-tabs-list {
+  height: 56px;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.detail-tabs-nav .tab-trigger {
+  height: 56px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #64748b !important;
+  box-shadow: none !important;
+}
+
+.detail-tabs-nav .tab-trigger[data-state="active"] {
+  color: #0f766e !important;
+}
+
+.detail-tabs-nav .tab-trigger[data-state="active"]::after {
+  right: 14px !important;
+  bottom: 1px !important;
+  left: 14px !important;
+  height: 5px !important;
+  border-radius: 5px 5px 0 0 !important;
+  background: #0f9f8e !important;
+  opacity: 1 !important;
+}
