@@ -42,7 +42,9 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
    const path='/api/orders/'+order.orderNo;
    let detail=await get(path);
    await t.test('bulk order inserts retain every material and planned amount',()=>{
-    assert.equal(detail.materials.length,105);assert.equal(detail.plans.length,1);assert.equal(Number(detail.plans[0].planned_base_minor),12345);
+    assert.equal(detail.materials.filter(item=>item.system_code==='PASSPORT_BIO_PAGE').length,1);
+    assert.equal(detail.materials.filter(item=>item.system_code===null).length,105);
+    assert.equal(detail.materials.length,106);assert.equal(detail.plans.length,1);assert.equal(Number(detail.plans[0].planned_base_minor),12345);
    });
    await sql.query(`INSERT INTO order_progress(id,order_id,progress_date,title,details,follow_up_done,pinned,created_at)
     SELECT $1||n,$2,CURRENT_DATE,$3||n,$4,1,0,now()+n*interval '1 second' FROM generate_series(1,65) n`,['lr_progress_'+suffix,order.id,marker+'跟进','深层备注'+suffix]);

@@ -64,6 +64,12 @@ jobs:
           node scripts/integration-test-user.mjs create "$MIGRA_TEST_CREDENTIAL_FILE"
           node scripts/export-integration-test-credentials.mjs "$MIGRA_TEST_CREDENTIAL_FILE"
 
+      - name: Create deterministic integration fixture
+        env:
+          MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_ALLOW_TEST_FIXTURES: "1"
+        run: node scripts/integration-test-fixture.mjs create
+
       - name: PostgreSQL constraints and complete business lifecycles
         env:
           MIGRA_TEST_UPLOAD_ROOT: ${{ github.workspace }}/data/files
@@ -91,6 +97,15 @@ jobs:
           MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
         run: node --test tests/auth-security.test.mjs
 
+      - name: Remove integration test data before backup
+        env:
+          MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_ALLOW_TEST_FIXTURES: "1"
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+        run: |
+          node scripts/integration-test-fixture.mjs delete
+          node scripts/integration-test-user.mjs delete "$MIGRA_TEST_CREDENTIAL_FILE"
+
       - name: Runtime, database-role and backup-role isolation
         run: npm run deployment:verify
 
@@ -104,12 +119,15 @@ jobs:
         if: failure()
         run: docker compose logs --tail=200
 
-      - name: Remove integration test user
+      - name: Remove integration test data
         if: always()
         env:
           MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_ALLOW_TEST_FIXTURES: "1"
           MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
-        run: node scripts/integration-test-user.mjs delete "$MIGRA_TEST_CREDENTIAL_FILE" || true
+        run: |
+          node scripts/integration-test-fixture.mjs delete || true
+          node scripts/integration-test-user.mjs delete "$MIGRA_TEST_CREDENTIAL_FILE" || true
 
       - name: Stop isolated environment
         if: always()

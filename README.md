@@ -166,7 +166,7 @@ docker compose -f docker-compose.yml -f docker-compose.low-resource.yml up -d
 
 **升级顺序**：部署新镜像并先完成迁移0019，再启动应用。不要把新前端与旧API混用。0019为增量结构迁移；回退旧应用时可暂时保留新队列、触发器和索引，确认不再使用后再单独清理。本次未删除旧搜索字段/索引。
 
-验证：`npm test` 包含类型/生产构建、权限、审计、金额和文件范围/哈希测试；`npm run test:integration` 增加全订单搜索、分页、并发冲突、20MiB上传边界等回归。集成测试需隔离数据库、测试账号及 `MIGRA_BASE_URL`、`MIGRA_DATABASE_URL`、`MIGRA_TEST_CREDENTIAL_FILE`；有文件写入时设置 `MIGRA_TEST_UPLOAD_ROOT` 到测试服务实际使用的临时上传目录。测试不能对生产数据运行。
+验证：`npm test` 包含类型/生产构建、权限、审计、金额和文件范围/哈希测试；`npm run test:integration` 增加全订单搜索、分页、并发冲突、20MiB上传边界等回归。集成测试需使用隔离数据库、测试账号及 `MIGRA_BASE_URL`、`MIGRA_DATABASE_URL`、`MIGRA_TEST_CREDENTIAL_FILE`；CI 还会先创建可重复清理的确定性业务夹具，缺少基础数据将直接失败而不跳过。有文件写入时设置 `MIGRA_TEST_UPLOAD_ROOT` 到测试服务实际使用的临时上传目录。测试不能对生产数据运行。
 
 ### 搜索浏览器 CI 与后续事项
 

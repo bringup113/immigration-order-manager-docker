@@ -82,9 +82,9 @@ test("logout opens a clean login page without a stale error", { skip: !enabled }
 test("stale order versions are rejected without changing data", { skip: !enabled }, async () => {
   const cookie = await login();
   const orders = await getOrderRows(cookie);
-  if (!orders.length) return;
+  assert.ok(orders.length, "隔离集成测试夹具缺少订单");
   const detail = await getJson(`/api/orders/${encodeURIComponent(orders[0].order_no)}`, cookie);
-  if (!(meets(detail.order.version) && detail.order.version > 0)) return;
+  assert.ok(meets(detail.order.version) && detail.order.version > 0, "订单版本号无效");
 
   const response = await fetch(`${baseUrl}/api/orders/${encodeURIComponent(orders[0].order_no)}`, {
     method: "POST",
@@ -98,10 +98,10 @@ test("stale order versions are rejected without changing data", { skip: !enabled
   assert.equal(unchanged.order.version, detail.order.version);
 });
 
-test("order API rejects invalid dates, oversized text, enums, currencies, and amounts", { skip: !enabled }, async (context) => {
+test("order API rejects invalid dates, oversized text, enums, currencies, and amounts", { skip: !enabled }, async () => {
   const cookie = await login();
   const orders = await getOrderRows(cookie);
-  if (!orders.length) return context.skip("No order");
+  assert.ok(orders.length, "隔离集成测试夹具缺少订单");
   const orderNo = orders[0].order_no;
   const detail = await getJson(`/api/orders/${encodeURIComponent(orderNo)}`, cookie);
   const send = (payload) => fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}`, {
@@ -120,7 +120,7 @@ function meets(value) {
   return typeof value === "number" || /^\d+$/.test(String(value));
 }
 
-test("workflow transitions keep one current step, advance automatically, require reasons, and write audits", { skip: !(enabled && databaseUrl) }, async (context) => {
+test("workflow transitions keep one current step, advance automatically, require reasons, and write audits", { skip: !(enabled && databaseUrl) }, async () => {
   const database = new pg.Client({ connectionString: databaseUrl });
   await database.connect();
   const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
@@ -129,10 +129,10 @@ test("workflow transitions keep one current step, advance automatically, require
   try {
     const source = await database.query(`SELECT c.id AS agent_id,p.id AS project_id,p.code,p.name,p.country,p.revision_no
       FROM agents c CROSS JOIN projects p WHERE c.active=1 AND p.status='ACTIVE' LIMIT 1`);
-    if (!source.rowCount) return context.skip("No active agent and project available");
+    assert.equal(source.rowCount, 1, "隔离集成测试夹具缺少启用的代理或项目");
     const row = source.rows[0];
     const owner = await database.query("SELECT id FROM users WHERE active=1 ORDER BY role_id='role_owner' DESC,created_at LIMIT 1");
-    if (!owner.rowCount) return context.skip("No active owner available");
+    assert.equal(owner.rowCount, 1, "隔离集成测试夹具缺少启用的系统所有者");
     const now = new Date().toISOString();
     await database.query(`INSERT INTO orders
       (id,order_no,agent_id,project_id,project_code_snapshot,project_name_snapshot,country_snapshot,project_revision,status,
@@ -182,7 +182,7 @@ test("workflow transitions keep one current step, advance automatically, require
   }
 });
 
-test("OWN scope isolates every order surface and tasks complete their full lifecycle", { skip: !(enabled && databaseUrl) }, async (context) => {
+test("OWN scope isolates every order surface and tasks complete their full lifecycle", { skip: !(enabled && databaseUrl) }, async () => {
   const database = new pg.Client({ connectionString: databaseUrl });
   await database.connect();
   const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
@@ -204,7 +204,7 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
   let userId = "";
   try {
     const owner = await database.query("SELECT id FROM users WHERE active=1 AND role_id='role_owner' ORDER BY created_at LIMIT 1");
-    if (!owner.rowCount) return context.skip("No active system owner");
+    assert.equal(owner.rowCount, 1, "隔离集成测试夹具缺少启用的系统所有者");
     const ownerId = owner.rows[0].id;
     const now = new Date().toISOString();
     await database.query(`INSERT INTO roles (id,code,name,description,is_system,active,order_scope,created_at,updated_at)
@@ -320,7 +320,7 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
   }
 });
 
-test("cash entries can be voided and restored, and warning-only closure can be reopened", { skip: !(enabled && databaseUrl) }, async (context) => {
+test("cash entries can be voided and restored, and warning-only closure can be reopened", { skip: !(enabled && databaseUrl) }, async () => {
   const database = new pg.Client({ connectionString: databaseUrl });
   await database.connect();
   const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
@@ -333,7 +333,7 @@ test("cash entries can be voided and restored, and warning-only closure can be r
     const source = await database.query(`SELECT c.id AS agent_id,p.id AS project_id,p.code,p.name,p.country,p.revision_no,u.id AS owner_user_id
       FROM agents c CROSS JOIN projects p CROSS JOIN LATERAL (SELECT id FROM users WHERE active=1 AND role_id='role_owner' ORDER BY created_at LIMIT 1) u
       WHERE c.active=1 AND p.status='ACTIVE' LIMIT 1`);
-    if (!source.rowCount) return context.skip("No active source data");
+    assert.equal(source.rowCount, 1, "隔离集成测试夹具缺少启用的代理、项目或系统所有者");
     const row = source.rows[0];
     const now = new Date().toISOString();
     await database.query(`INSERT INTO orders
