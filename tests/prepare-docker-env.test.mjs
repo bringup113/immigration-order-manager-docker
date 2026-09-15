@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const prepareScript = resolve("scripts/prepare-docker-env.mjs");
+const composeFile = resolve("docker-compose.yml");
 const exportCredentialsScript = resolve(
   "scripts/export-integration-test-credentials.mjs",
 );
@@ -38,6 +39,13 @@ test("docker preparation creates writable bind-mount directories", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("backup container uses the prepared bind-mount owner", () => {
+  const compose = readFileSync(composeFile, "utf8");
+  const backupService = compose.match(/  postgres_backup:\n([\s\S]*?)\n  postgres_migrate:/)?.[1] || "";
+  assert.match(backupService, /user: "\$\{APP_UID:[^}]+\}:\$\{APP_GID:[^}]+\}"/);
+  assert.match(backupService, /- \.\/backups\/postgres:\/backups/);
 });
 
 test("CI credentials are exported to later steps and the password is masked", () => {

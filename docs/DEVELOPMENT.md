@@ -87,7 +87,7 @@
 - runtime 与 backup 均必须是 `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`。backup 只允许读取；runtime 不允许修改或删除操作日志和结案历史。
 - Web 启动时设置 `SKIP_DATABASE_MIGRATIONS=1`，不得把 DDL 权限重新授予运行账号。
 - 应用镜像必须以构建时写死的非 root UID/GID 运行；只允许写入 `/app/data` 和临时目录，应用代码目录保持只读。
-- `.env` 必须是 `0600`；所有容器使用 `json-file` 大小与文件数轮转，禁止无限增长。
+- `.env` 必须是 `0600`；应用和备份容器使用 `APP_UID:APP_GID` 访问宿主机绑定目录，避免 Linux 上目录归属不同导致写入失败；所有容器使用 `json-file` 大小与文件数轮转，禁止无限增长。
 
 ## 会话与密码标准
 

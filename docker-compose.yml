@@ -107,6 +107,7 @@ services:
     image: postgres:17-bookworm
     container_name: migra-postgres-backup
     restart: unless-stopped
+    user: "${APP_UID:?请先运行 npm run docker:prepare}:${APP_GID:?请先运行 npm run docker:prepare}"
     environment:
       PGHOST: postgres
       PGPORT: "5432"
