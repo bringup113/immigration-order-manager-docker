@@ -56,15 +56,20 @@ jobs:
           docker compose ps -a
           exit 1
 
+      - name: Create isolated integration test user
+        env:
+          MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+        run: |
+          node scripts/integration-test-user.mjs create "$MIGRA_TEST_CREDENTIAL_FILE"
+          node scripts/export-integration-test-credentials.mjs "$MIGRA_TEST_CREDENTIAL_FILE"
+
       - name: PostgreSQL constraints and complete business lifecycles
         env:
           MIGRA_TEST_UPLOAD_ROOT: ${{ github.workspace }}/data/files
           MIGRA_BASE_URL: http://127.0.0.1:3000
           MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
-          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
-        run: |
-          node scripts/integration-test-user.mjs create "$MIGRA_TEST_CREDENTIAL_FILE"
-          npm run test:integration
+        run: npm run test:integration
 
       - name: Install pinned browser test runtime
         run: |
