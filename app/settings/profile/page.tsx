@@ -2,6 +2,7 @@
 
 import { KeyRound, LogOut, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
@@ -33,6 +34,7 @@ type SessionRow = {
 };
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -91,7 +93,7 @@ export default function ProfilePage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "修改失败");
-      window.location.href = "/api/auth/login?return_to=/";
+      router.replace("/api/auth/login?return_to=/");
     } catch (reason) {
       setError(true);
       setMessage(reason instanceof Error ? reason.message : "修改失败");

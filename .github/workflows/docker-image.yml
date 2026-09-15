@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -34,6 +34,9 @@ jobs:
 
       - name: Backup failure and atomic-publish tests
         run: npm run test:backup
+
+      - name: Fresh Docker directory preparation test
+        run: npm run test:prepare
 
       - name: Prepare isolated Docker environment
         run: |
@@ -116,7 +119,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

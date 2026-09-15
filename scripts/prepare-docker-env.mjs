@@ -1,8 +1,16 @@
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { randomBytes } from "node:crypto";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const path = resolve(process.argv[2] || ".env");
+const projectRoot = dirname(path);
 let content = readFileSync(path, "utf8");
 const parsed = new Map();
 for (const line of content.split(/\r?\n/)) {
@@ -35,4 +43,19 @@ if (additions.length) {
   writeFileSync(path, content, { mode: 0o600 });
 }
 chmodSync(path, 0o600);
-process.stdout.write("Docker 数据库角色配置已准备，.env 权限为 0600。\n");
+
+for (const relativePath of ["data/files", "backups/postgres"]) {
+  const directory = resolve(projectRoot, relativePath);
+  mkdirSync(directory, { recursive: true, mode: 0o750 });
+  try {
+    accessSync(directory, constants.R_OK | constants.W_OK | constants.X_OK);
+  } catch {
+    throw new Error(
+      `Docker 挂载目录不可写：${directory}。请将该目录所有者改为当前用户后重新运行。`,
+    );
+  }
+}
+
+process.stdout.write(
+  "Docker 数据库角色与挂载目录已准备，.env 权限为 0600。\n",
+);

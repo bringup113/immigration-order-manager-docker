@@ -338,6 +338,8 @@ export default function AuditPage() {
       exclusive.setDate(exclusive.getDate() + 1);
       params.set("to", exclusive.toISOString());
     }
+    // This endpoint returns a CSV attachment rather than an internal page.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = `/api/admin/audit?${params}`;
   };
 

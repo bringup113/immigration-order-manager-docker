@@ -1,6 +1,6 @@
 {
   "name": "immigration-order-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -17,6 +17,7 @@
     "test:integration": "node scripts/require-integration-env.mjs && node --test tests/docker-smoke.test.mjs tests/postgres-constraints.test.mjs tests/low-resource.integration.test.mjs",
     "test:browser": "node tests/search-refresh.browser.cjs",
     "test:backup": "node --test tests/backup-scripts.test.mjs tests/file-integrity-script.test.mjs",
+    "test:prepare": "node --test tests/prepare-docker-env.test.mjs",
     "files:check": "node scripts/check-file-integrity.mjs",
     "files:hash-backfill": "node scripts/backfill-file-checksums.mjs",
     "deployment:verify": "./scripts/verify-deployment-security.sh",

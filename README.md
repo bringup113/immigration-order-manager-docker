@@ -52,7 +52,7 @@ docker compose logs migra
 docker compose --profile bench run --rm mrzscanner_bench --runs 10 --parallel 3
 ```
 
-`docker:prepare` 会生成 migrator、runtime、backup 三组独立随机密码，写入不纳入 Git 的 `.env`，并把文件权限收紧为 `0600`。应用容器使用宿主机当前 UID/GID 构建，以非 root 身份访问 `data/`。
+`docker:prepare` 会生成 migrator、runtime、backup 三组独立随机密码，写入不纳入 Git 的 `.env`，把文件权限收紧为 `0600`，并在 Compose 启动前创建、检查 `data/files/` 与 `backups/postgres/` 两个宿主机挂载目录。应用容器使用宿主机当前 UID/GID 构建，以非 root 身份访问 `data/`；如果旧目录属于其他用户，准备命令会明确报错，而不会让应用进入重启循环。
 
 浏览器打开 `http://127.0.0.1:3000`。数据库中没有任何账号时，登录页会自动显示“创建系统所有者”；由部署者填写用户名、显示姓名和密码，创建成功后直接进入系统。系统不会生成默认账号、默认密码或密码文件。
 
