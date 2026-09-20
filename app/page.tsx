@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  ArrowRight,
   BriefcaseBusiness,
   CircleDollarSign,
   FileText,
@@ -32,6 +31,7 @@ type Dashboard = {
   reminders: {
     source: string;
     reminder_type: ReminderType;
+    target_tab: "workflow" | "finance" | "people" | "common";
     due_date: string;
     order_no: string;
     title: string;
@@ -39,25 +39,7 @@ type Dashboard = {
     main_applicant: string | null;
   }[];
   trend: { month: string; income_minor: number; expense_minor: number }[];
-  recentOrders: {
-    order_no: string;
-    agent_name: string;
-    project_name: string;
-    main_applicant: string | null;
-    signed_at: string | null;
-    status: string;
-    latest_progress: string | null;
-  }[];
   access: { orders: boolean; finance: boolean; materials: boolean; tasks: boolean; ordersWrite: boolean };
-};
-
-const statusLabel: Record<string, string> = {
-  DRAFT: "草稿",
-  ACTIVE: "办理中",
-  PAUSED: "暂停",
-  COMPLETED: "已完成",
-  CANCELLED: "已取消",
-  REFUNDED: "已退款",
 };
 
 const reminderAppearance: Record<ReminderType, { icon: LucideIcon; tone: string }> = {
@@ -95,12 +77,6 @@ export default function Home() {
           </Button> : null
         }
       />
-      {data?.access.orders && <div className="mb-5 flex flex-col justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-950 lg:flex-row lg:items-center">
-        <span><b>本周提醒来自：</b>收付款计划、办理流程、材料预计日期和待跟进日期，系统会自动汇总。</span>
-        <Button asChild variant="outline" size="sm" className="border-blue-200 bg-white">
-          <Link href="/orders">查看来源订单</Link>
-        </Button>
-      </div>}
       {error && <ErrorState message={error} />}
       {!data ? <LoadingState /> : <>
         <section className={`grid gap-4 sm:grid-cols-2 ${data.access.finance ? "xl:grid-cols-4" : "xl:grid-cols-1"}`}>
@@ -141,7 +117,7 @@ export default function Home() {
                 const ReminderIcon = appearance.icon;
                 const overdue = new Date(`${item.due_date}T23:59:59`) < new Date();
                 return <Link
-                  href={`/orders/${item.order_no}`}
+                  href={`/orders/${encodeURIComponent(item.order_no)}?tab=${item.target_tab}`}
                   key={`${item.order_no}-${item.source}-${index}`}
                   className="todo-row group transition-colors hover:border-teal-200 hover:bg-teal-50/30"
                 >
@@ -162,23 +138,6 @@ export default function Home() {
           </article>
         </section>
 
-        {data.access.orders && <section className="panel mt-5 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-5 sm:px-6">
-            <div><h2 className="section-title">最近更新订单</h2><p className="section-subtitle">优先显示办理项目、主申请人和最新进度</p></div>
-            <Button asChild variant="ghost" className="text-teal-700"><Link href="/orders">查看全部 <ArrowRight size={16} /></Link></Button>
-          </div>
-          {data.recentOrders.length === 0 ? <div className="border-t p-8 text-center text-sm text-slate-400">还没有订单。</div> : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
-              <thead><tr className="table-head"><th>办理项目 / 主申请人</th><th>代理来源 / 订单编号</th><th>签订日期</th><th>最新进度</th><th>订单状态</th></tr></thead>
-              <tbody>{data.recentOrders.map((row) => <tr className="table-row" key={row.order_no}>
-                <td><Link href={`/orders/${row.order_no}`} className="font-semibold hover:text-teal-700">{row.project_name}</Link><p className="mt-1 text-xs text-slate-500">{row.main_applicant || "未填写主申请人"}</p></td>
-                <td>{row.agent_name}<p className="mt-1 font-mono text-xs text-slate-400">{row.order_no}</p></td><td>{row.signed_at || "未设置"}</td>
-                <td className="max-w-sm text-xs text-slate-600">{row.latest_progress || "暂无进度"}</td>
-                <td><Badge variant="outline" className="status blue">{statusLabel[row.status] || row.status}</Badge></td>
-              </tr>)}</tbody>
-            </table></div>
-          )}
-        </section>}
       </>}
     </AppShell>
   );

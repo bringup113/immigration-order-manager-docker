@@ -257,8 +257,8 @@ export default function ProfilePage() {
                 <h2 className="font-semibold">双重验证</h2>
                 <p className="mt-1 text-sm text-slate-500">
                   {mfaRequired
-                    ? "当前为公网安全模式，所有者和管理员必须启用双重验证。"
-                    : "登录密码之后，再验证手机动态码；公网部署建议所有者和管理员启用。"}
+                    ? "当前为公网安全模式，系统所有者必须启用双重验证。"
+                    : "登录密码之后，再验证手机动态码；其他账号可按需启用。"}
                 </p>
               </div>
             </div>

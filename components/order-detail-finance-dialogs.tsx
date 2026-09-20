@@ -28,6 +28,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { CashCalculatedField } from "@/lib/cash-calculation";
+import { formatMoney } from "@/lib/amount";
+import { selectCashPlan } from "@/lib/cash-plan-description";
 
 type Props = {
   activeDialog: OrderDetailDialog;
@@ -99,7 +101,7 @@ export function OrderDetailFinanceDialogs({
                 value={cash.direction}
                 onChange={(direction) =>
                   onCashChange({
-                    ...cash,
+                    ...selectCashPlan(cash, "", ""),
                     direction: direction as CashDirection,
                     orderPlanId: "",
                   })
@@ -123,7 +125,7 @@ export function OrderDetailFinanceDialogs({
                   className="mt-2"
                   value={cash.description}
                   onChange={(event) =>
-                    onCashChange({ ...cash, description: event.target.value })
+                    onCashChange({ ...cash, description: event.target.value, autoDescription: null })
                   }
                   placeholder={
                     cash.direction === "RECEIPT"
@@ -144,16 +146,17 @@ export function OrderDetailFinanceDialogs({
               <Choose
                 value={cash.orderPlanId || "NONE"}
                 onChange={(value) =>
-                  onCashChange({
-                    ...cash,
-                    orderPlanId: value === "NONE" ? "" : value,
-                  })
+                  onCashChange(selectCashPlan(
+                    cash,
+                    value === "NONE" ? "" : value,
+                    String(matchingPlans.find((row) => String(row.id) === value)?.name || ""),
+                  ))
                 }
                 items={[
                   ["NONE", "不关联具体计划"],
                   ...matchingPlans.map((row) => [
                     String(row.id),
-                    `${String(row.name)} · ${String(row.currency)}`,
+                    `${String(row.name)} · ${formatMoney(String(row.currency), row.planned_amount_minor)}`,
                   ]),
                 ]}
               />

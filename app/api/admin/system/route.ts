@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/api-auth";
+import { authorizeApiUser } from "@/lib/api-auth";
 import { systemHealth } from "@/lib/system-health";
+import { getChatGPTUser } from "@/app/chatgpt-auth";
 export const dynamic = "force-dynamic";
 export async function GET() {
-  const auth = await requireApiUser("audit.read");
+  const auth = authorizeApiUser(await getChatGPTUser(false), "audit.read");
   if (auth.response) return auth.response;
   try {
     return NextResponse.json(await systemHealth(), {

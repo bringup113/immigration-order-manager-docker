@@ -101,11 +101,16 @@ export async function createOrder(
   const passportNumbers = suppliedApplicants.map((item) =>
     textValue(item, "passportNo").toUpperCase().replace(/\s+/g, ""),
   );
-  if (passportNumbers.some((passportNo) => !passportNo))
-    throw new DomainError("每位申请人都必须填写护照号码。");
-  if (new Set(passportNumbers).size !== passportNumbers.length)
+  const suppliedPassportNumbers = passportNumbers.filter(Boolean);
+  if (new Set(suppliedPassportNumbers).size !== suppliedPassportNumbers.length)
     throw new DomainError("同一订单内不能重复使用相同的护照号码。");
 
+  const plannedDate = (row: JsonRecord, templates: TemplateRow[], label: string) => {
+    if (row.dueDateMode !== "template") return dateField(row, "dueDate", label);
+    const template = templates.find(item => String(item.id) === textValue(row, "templateId"));
+    if (!template) throw new DomainError("日期对应的项目模板已不存在，请重新选择项目。", 409);
+    return addDays(signedAt, template.due_days === null ? null : Number(template.due_days));
+  };
   const suppliedSteps = recordArray(body.steps, "办理流程", 100);
   const steps = suppliedSteps.length
     ? suppliedSteps
@@ -127,7 +132,7 @@ export async function createOrder(
         planType: row.plan_type,
         name: row.name,
         currency: row.currency,
-        amountMinor: row.amount_minor,
+        amountMinor: Number(row.amount_minor),
         dueDate: addDays(
           signedAt,
           row.due_days === null ? null : Number(row.due_days),
@@ -152,7 +157,7 @@ export async function createOrder(
     throw new DomainError("订单状态不正确。");
   if (status !== "DRAFT")
     throw new DomainError(
-      "新订单必须先保存为草稿，完成申请人护照资料后再开始办理。",
+      "新订单必须先保存为草稿，再执行开始办理。",
     );
   const statements = [
     db
@@ -200,13 +205,11 @@ export async function createOrder(
           key: "nationality",
           label: "国籍",
           max: FIELD_LIMITS.country,
-          required: true,
         },
         {
           key: "passportNo",
           label: "护照号码",
           max: FIELD_LIMITS.passport,
-          required: true,
         },
         {
           key: "relationship",
@@ -244,13 +247,13 @@ export async function createOrder(
             textValue(item, "relationship") || null,
             textValue(item, "name"),
             textValue(item, "nationality") || null,
-            passportNo,
+            passportNo || null,
             index,
             textValue(item, "surname") || null,
             textValue(item, "givenNames") || null,
-            dateField(item, "birthDate", "出生日期", true),
+            dateField(item, "birthDate", "出生日期"),
             sex || null,
-            dateField(item, "passportExpiry", "护照有效期", true),
+            dateField(item, "passportExpiry", "护照有效期"),
             textValue(item, "issuingCountry") || null,
             textValue(item, "documentCode") || null,
             textValue(item, "personalNumber") || null,
@@ -285,7 +288,7 @@ export async function createOrder(
     const name = textValue(step, "name");
     if (!name) throw new DomainError("流程步骤名称不能为空。");
     const stepStatus = "PENDING";
-    const dueDate = dateField(step, "dueDate", "流程预计日期");
+    const dueDate = plannedDate(step, stepTemplates.results, "流程预计日期");
     statements.push(
       db
         .prepare(
@@ -357,7 +360,7 @@ export async function createOrder(
           amountMinor,
           rateScaled,
           toBaseMinor(amountMinor, rateScaled),
-          dateField(plan, "dueDate", "收付款计划日期"),
+          plannedDate(plan, planTemplates.results, "收付款计划日期"),
           textValue(plan, "channelId") || null,
           textValue(plan, "notes") || null,
         ),

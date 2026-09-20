@@ -10,7 +10,7 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
   const canReadFinance = hasPermission(user, "finance.read");
   const canReadMaterials = hasPermission(user, "materials.read");
   const canReadTasks = hasPermission(user, "tasks.read");
-  const [orders, outstanding, balance, reminders, trend, recentOrders] =
+  const [orders, outstanding, balance, reminders, trend] =
     await Promise.all([
       canReadOrders
         ? db
@@ -49,19 +49,24 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
           `SELECT * FROM (
       SELECT CASE op.plan_type WHEN 'RECEIVABLE' THEN '收款计划' ELSE '付款计划' END AS source,
         CASE op.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END AS reminder_type,
-        op.due_date,o.order_no,op.name AS title,o.project_name_snapshot AS project_name,
+        'finance' AS target_tab,op.due_date,o.order_no,op.name AS title,o.project_name_snapshot AS project_name,
         (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1) AS main_applicant
         FROM order_plans op JOIN orders o ON o.id=op.order_id WHERE ${canReadFinance} AND ${orderScope.sql} AND op.due_date IS NOT NULL AND o.status IN ('ACTIVE','PAUSED') AND op.due_date<=${sevenDays}
-      UNION ALL SELECT '办理流程','STEP',s.due_date,o.order_no,s.name,o.project_name_snapshot,
+        AND op.planned_amount_minor > COALESCE((
+          SELECT SUM(e.plan_amount_minor) FROM order_cash_entries e
+          WHERE e.order_plan_id=op.id AND e.order_id=op.order_id AND e.status='ACTIVE'
+            AND e.direction=CASE op.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END
+        ),0)
+      UNION ALL SELECT '办理流程','STEP','workflow',s.due_date,o.order_no,s.name,o.project_name_snapshot,
         (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
         FROM order_steps s JOIN orders o ON o.id=s.order_id WHERE ${canReadOrders} AND ${orderScope.sql} AND s.due_date IS NOT NULL AND s.status IN ('PENDING','IN_PROGRESS') AND o.status IN ('ACTIVE','PAUSED') AND s.due_date<=${sevenDays}
-      UNION ALL SELECT '待跟进','FOLLOW_UP',g.follow_up_date,o.order_no,COALESCE(NULLIF(g.next_action,''),g.title),o.project_name_snapshot,
+      UNION ALL SELECT '待跟进','FOLLOW_UP','workflow',g.follow_up_date,o.order_no,COALESCE(NULLIF(g.next_action,''),g.title),o.project_name_snapshot,
         (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
         FROM order_progress g JOIN orders o ON o.id=g.order_id WHERE ${canReadOrders} AND ${orderScope.sql} AND g.follow_up_date IS NOT NULL AND g.follow_up_done=0 AND o.status IN ('ACTIVE','PAUSED') AND g.follow_up_date<=${sevenDays}
-      UNION ALL SELECT '材料收集','MATERIAL',m.expected_date,o.order_no,m.name,o.project_name_snapshot,
+      UNION ALL SELECT '材料收集','MATERIAL',CASE WHEN m.applicant_id IS NOT NULL THEN 'people' ELSE 'common' END,m.expected_date,o.order_no,m.name,o.project_name_snapshot,
         (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
         FROM order_materials m JOIN orders o ON o.id=m.order_id WHERE ${canReadMaterials} AND ${orderScope.sql} AND m.expected_date IS NOT NULL AND NOT EXISTS (SELECT 1 FROM material_files f WHERE f.material_id=m.id AND f.status='ACTIVE') AND o.status IN ('ACTIVE','PAUSED') AND m.expected_date<=${sevenDays}
-      UNION ALL SELECT '订单待办','TASK',t.due_date,o.order_no,t.title,o.project_name_snapshot,
+      UNION ALL SELECT '订单待办','TASK','workflow',t.due_date,o.order_no,t.title,o.project_name_snapshot,
         (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
         FROM order_tasks t JOIN orders o ON o.id=t.order_id WHERE ${canReadTasks} AND ${orderScope.sql} AND t.status='OPEN' AND o.status IN ('ACTIVE','PAUSED') AND t.due_date<=${sevenDays}
     ) scoped_reminders ORDER BY due_date,order_no LIMIT 30`,
@@ -75,17 +80,6 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
       COALESCE(SUM(CASE WHEN direction='RECEIPT' THEN base_amount_minor ELSE 0 END),0) AS income_minor,
       COALESCE(SUM(CASE WHEN direction='PAYMENT' THEN base_amount_minor ELSE 0 END),0) AS expense_minor
       FROM order_cash_entries e JOIN orders o ON o.id=e.order_id WHERE e.status='ACTIVE' AND ${orderScope.sql} GROUP BY to_char(entry_date,'YYYY-MM') ORDER BY month DESC LIMIT 6`,
-            )
-            .bind(...orderScope.values)
-            .all()
-        : Promise.resolve({ results: [] }),
-      canReadOrders
-        ? db
-            .prepare(
-              `SELECT o.order_no,c.name AS agent_name,o.project_name_snapshot AS project_name,o.status,o.signed_at,
-      (SELECT name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1) AS main_applicant,
-      (SELECT title FROM order_progress g WHERE g.order_id=o.id ORDER BY g.progress_date DESC,g.created_at DESC LIMIT 1) AS latest_progress
-      FROM orders o JOIN agents c ON c.id=o.agent_id WHERE ${orderScope.sql} ORDER BY o.updated_at DESC LIMIT 5`,
             )
             .bind(...orderScope.values)
             .all()
@@ -107,7 +101,6 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
     balanceMinor: Math.round(Number(balance?.value ?? 0)),
     reminders: allowedReminders,
     trend: trend.results.reverse(),
-    recentOrders: recentOrders.results,
     access: {
       orders: canReadOrders,
       finance: canReadFinance,

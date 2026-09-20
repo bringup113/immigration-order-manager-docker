@@ -31,8 +31,6 @@ export async function updateOrderApplicant(
     .replace(/\s+/g, "");
   const relationship = textValue(body, "relationship");
   if (!name) throw new DomainError("请填写申请人姓名。");
-  if (!passportNo) throw new DomainError("请填写申请人护照号码。");
-  if (!nationality) throw new DomainError("请填写申请人国籍。");
 
   const applicant = applicantId
     ? await db
@@ -87,21 +85,20 @@ export async function updateOrderApplicant(
     const sex = textValue(body, "sex");
     if (sex && !["M", "F", "X"].includes(sex))
       throw new DomainError("申请人性别格式不正确。");
-    const birthDate = dateField(body, "birthDate", "出生日期", true);
+    const birthDate = dateField(body, "birthDate", "出生日期");
     const passportExpiry = dateField(
       body,
       "passportExpiry",
       "护照有效期",
-      true,
     );
     const identityValues = [
       [String(applicant.passport_no || ""), passportNo],
       [String(applicant.surname || ""), textValue(body, "surname")],
       [String(applicant.given_names || ""), textValue(body, "givenNames")],
       [String(applicant.nationality || ""), nationality],
-      [String(applicant.birth_date || "").slice(0, 10), birthDate],
+      [String(applicant.birth_date || "").slice(0, 10), birthDate || ""],
       [String(applicant.sex || ""), sex],
-      [String(applicant.passport_expiry || "").slice(0, 10), passportExpiry],
+      [String(applicant.passport_expiry || "").slice(0, 10), passportExpiry || ""],
       [
         String(applicant.issuing_country || ""),
         textValue(body, "issuingCountry"),
@@ -112,6 +109,7 @@ export async function updateOrderApplicant(
         textValue(body, "personalNumber"),
       ],
     ];
+    const identityComplete = Boolean(passportNo && nationality && birthDate && passportExpiry);
     const identityChanged = identityValues.some(
       ([before, after]) => before !== after,
     );
@@ -125,7 +123,7 @@ export async function updateOrderApplicant(
         .bind(
           name,
           nationality,
-          passportNo,
+          passportNo || null,
           applicant.applicant_type === "MAIN" ? null : relationship || null,
           textValue(body, "surname") || null,
           textValue(body, "givenNames") || null,
@@ -135,9 +133,9 @@ export async function updateOrderApplicant(
           textValue(body, "issuingCountry") || null,
           textValue(body, "documentCode") || null,
           textValue(body, "personalNumber") || null,
-          identityChanged ? "MANUALLY_CONFIRMED" : applicant.mrz_status,
-          identityChanged ? now : applicant.mrz_confirmed_at,
-          identityChanged ? actorUserId : applicant.mrz_confirmed_by,
+          identityChanged ? (identityComplete ? "MANUALLY_CONFIRMED" : "NEEDS_REVIEW") : applicant.mrz_status,
+          identityChanged ? (identityComplete ? now : null) : applicant.mrz_confirmed_at,
+          identityChanged ? (identityComplete ? actorUserId : null) : applicant.mrz_confirmed_by,
           applicantId,
           order.id,
         ),
@@ -169,8 +167,7 @@ export async function addDependentApplicant(
     .toUpperCase()
     .replace(/\s+/g, "");
   const relationship = textValue(body, "relationship");
-  if (!name || !passportNo || !nationality)
-    throw new DomainError("姓名、护照号码和国籍为必填项。");
+  if (!name) throw new DomainError("请填写系统显示名称。");
 
   const duplicate = await db
     .prepare(
@@ -198,7 +195,7 @@ export async function addDependentApplicant(
       .prepare(
         `INSERT INTO order_applicants
           (id,order_id,applicant_type,relationship,name,nationality,passport_no,sequence,surname,given_names,birth_date,sex,passport_expiry,issuing_country,document_code,personal_number)
-          VALUES (?,?,'DEPENDENT',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          VALUES (?,?,'DEPENDENT',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         applicantId,
@@ -206,13 +203,13 @@ export async function addDependentApplicant(
         relationship || "其他",
         name,
         nationality,
-        passportNo,
+        passportNo || null,
         Number(next?.value || 1),
         textValue(body, "surname") || null,
         textValue(body, "givenNames") || null,
-        dateField(body, "birthDate", "出生日期", true),
+        dateField(body, "birthDate", "出生日期"),
         sex || null,
-        dateField(body, "passportExpiry", "护照有效期", true),
+        dateField(body, "passportExpiry", "护照有效期"),
         textValue(body, "issuingCountry") || null,
         textValue(body, "documentCode") || null,
         textValue(body, "personalNumber") || null,

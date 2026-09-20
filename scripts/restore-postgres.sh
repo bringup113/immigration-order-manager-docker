@@ -42,11 +42,11 @@ if [[ "$restore_status" -eq 0 ]]; then
     --output /app/data/file-integrity-report.json || restore_status=$?
   if [[ "$restore_status" -ne 0 ]]; then
     echo "数据库已成功恢复，但附件一致性检查发现异常或未能完成。请查看 data/file-integrity-report.json 和上方日志；系统不会自动删除或修改附件。" >&2
-    if ! docker compose exec -T postgres psql --username="${POSTGRES_USER:-migra}" --dbname="${POSTGRES_DB:-migra}" -c "INSERT INTO audit_logs (id,occurred_at,actor_username_snapshot,action,entity_type,result,summary,request_id) VALUES ('aud_integrity_'||md5(clock_timestamp()::text||random()::text),to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),'SYSTEM','FILE_INTEGRITY_CHECK','SYSTEM','FAILURE','数据库恢复后的附件一致性检查发现异常或未能完成；详情见 file-integrity-report.json','integrity_'||md5(clock_timestamp()::text));" >/dev/null; then
+    if ! docker compose exec -T postgres psql --username="${POSTGRES_USER:-migra}" --dbname="${POSTGRES_DB:-migra}" -c "INSERT INTO audit_logs (id,occurred_at,actor_username_snapshot,action,entity_type,result,summary,request_id) VALUES ('aud_integrity_'||md5(clock_timestamp()::text||random()::text),clock_timestamp(),'SYSTEM','FILE_INTEGRITY_CHECK','SYSTEM','FAILURE','数据库恢复后的附件一致性检查发现异常或未能完成；详情见 file-integrity-report.json','integrity_'||md5(clock_timestamp()::text));" >/dev/null; then
       echo "附件检查失败日志写入数据库失败，请同时保留本次终端输出。" >&2
     fi
   fi
-  docker compose exec -T postgres psql --username="${POSTGRES_USER:-migra}" --dbname="${POSTGRES_DB:-migra}" -c "INSERT INTO audit_logs (id,occurred_at,actor_username_snapshot,action,entity_type,result,summary,request_id) VALUES ('aud_restore_'||md5(clock_timestamp()::text||random()::text),to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),'SYSTEM','DATABASE_RESTORE','SYSTEM','SUCCESS','PostgreSQL 数据库恢复完成；附件检查结果见 file-integrity-report.json','restore_'||md5(clock_timestamp()::text));" >/dev/null
+  docker compose exec -T postgres psql --username="${POSTGRES_USER:-migra}" --dbname="${POSTGRES_DB:-migra}" -c "INSERT INTO audit_logs (id,occurred_at,actor_username_snapshot,action,entity_type,result,summary,request_id) VALUES ('aud_restore_'||md5(clock_timestamp()::text||random()::text),clock_timestamp(),'SYSTEM','DATABASE_RESTORE','SYSTEM','SUCCESS','PostgreSQL 数据库恢复完成；附件检查结果见 file-integrity-report.json','restore_'||md5(clock_timestamp()::text));" >/dev/null
 fi
 docker compose start migra
 app_stopped=0

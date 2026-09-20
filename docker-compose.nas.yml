@@ -1,0 +1,7 @@
+# NAS + Lucky 部署覆盖文件。
+# NAS_BIND_ADDRESS 决定内网监听地址；APP_ORIGIN 仍在 .env 中填写公网 HTTPS 来源。
+# 应用会同时接受 APP_ORIGIN 和与当前请求 Host 相同的内网来源。
+services:
+  migra:
+    ports: !override
+      - "${NAS_BIND_ADDRESS:-192.168.3.13}:${APP_PORT:-3000}:3000"

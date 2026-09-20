@@ -13,10 +13,10 @@ const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
 
-export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
+export async function getChatGPTUser(touchActivity = true): Promise<ChatGPTUser | null> {
   if (isDockerDeployment()) {
     const cookieStore = await cookies();
-    const user = await verifyDockerSession(cookieStore.get(dockerSessionCookieName())?.value);
+    const user = await verifyDockerSession(cookieStore.get(dockerSessionCookieName())?.value, touchActivity);
     if (!user) return null;
     return { ...user, email: `${user.username}@local`, fullName: user.displayName };
   }

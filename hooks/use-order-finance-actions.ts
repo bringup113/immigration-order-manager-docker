@@ -189,11 +189,13 @@ export function useOrderFinanceActions({
   }
 
   function saveCashEntry() {
+    const payload = { ...cash };
+    delete payload.autoDescription;
     return run(
       {
         action: "saveCashEntry",
         entryId: editingCashId || undefined,
-        ...cash,
+        ...payload,
       },
       true,
     );

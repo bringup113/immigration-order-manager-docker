@@ -1,5 +1,6 @@
 const missing = [];
 if (!process.env.MIGRA_BASE_URL) missing.push("MIGRA_BASE_URL");
+if (!process.env.MIGRA_DATABASE_URL) missing.push("MIGRA_DATABASE_URL");
 const hasCredentials = Boolean(process.env.MIGRA_TEST_USERNAME && process.env.MIGRA_TEST_PASSWORD);
 if (!hasCredentials) missing.push("MIGRA_TEST_USERNAME + MIGRA_TEST_PASSWORD");
 if (missing.length) {

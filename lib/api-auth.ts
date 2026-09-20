@@ -12,7 +12,7 @@ export function authorizeApiUser(user: ChatGPTUser | null, permission?: string) 
     return { user: null, response: NextResponse.json({ error: "首次登录必须先修改密码。", code: "PASSWORD_CHANGE_REQUIRED" }, { status: 403 }) };
   }
   if (permission && user.mfaRequired) {
-    return { user: null, response: NextResponse.json({ error: "公网运行要求所有者和管理员先启用双重验证。", code: "MFA_SETUP_REQUIRED" }, { status: 403 }) };
+    return { user: null, response: NextResponse.json({ error: "公网运行要求系统所有者先启用双重验证。", code: "MFA_SETUP_REQUIRED" }, { status: 403 }) };
   }
   if (permission && !hasPermission(user, permission)) return { user: null, response: NextResponse.json({ error: "当前账号没有执行该操作的权限。" }, { status: 403 }) };
   return { user, response: null };
@@ -23,10 +23,12 @@ export function isAllowedMutationOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
+    const requestOrigin = new URL(origin);
     const configuredOrigin = process.env.APP_ORIGIN?.trim();
-    if (configuredOrigin) return new URL(origin).origin === new URL(configuredOrigin).origin;
+    if (configuredOrigin && requestOrigin.origin === new URL(configuredOrigin).origin)
+      return true;
     const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host");
-    return Boolean(host && new URL(origin).host === host);
+    return Boolean(host && requestOrigin.host === host);
   } catch {
     return false;
   }

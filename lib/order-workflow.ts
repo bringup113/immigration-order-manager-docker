@@ -84,21 +84,6 @@ export async function changeOrderStatus(
       ["PAUSED", "CANCELLED", "REFUNDED"].includes(previousStatus));
   if (requiresReason && !reason)
     throw new DomainError("请填写本次状态变更原因。");
-  if (nextStatus === "ACTIVE" && previousStatus === "DRAFT") {
-    const incomplete = await db
-      .prepare(
-        `SELECT COUNT(*) AS value FROM order_applicants a WHERE a.order_id=? AND
-      (btrim(a.name)='' OR btrim(a.passport_no)='' OR COALESCE(btrim(a.nationality),'')='' OR a.birth_date IS NULL OR a.passport_expiry IS NULL
-       OR NOT EXISTS (SELECT 1 FROM order_materials m JOIN material_files f ON f.material_id=m.id AND f.status='ACTIVE'
-         WHERE m.order_id=a.order_id AND m.applicant_id=a.id AND m.system_code='PASSPORT_BIO_PAGE'))`,
-      )
-      .bind(orderId)
-      .first();
-    if (Number(incomplete?.value || 0) > 0)
-      throw new DomainError(
-        "所有申请人都必须完成身份资料并上传护照首页，才能开始办理。",
-      );
-  }
   const now = nowIso();
   await db
     .prepare(

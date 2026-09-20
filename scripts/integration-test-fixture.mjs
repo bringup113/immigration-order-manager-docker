@@ -14,6 +14,8 @@ if (process.env.MIGRA_ALLOW_TEST_FIXTURES !== "1") {
 const fixture = {
   agentId: "agt_ci_fixture",
   projectId: "prj_ci_fixture",
+  stepTemplateId: "step_ci_browser",
+  planTemplateId: "plan_ci_browser",
   orderId: "ord_ci_fixture",
   orderNo: "CI-FIXTURE-2026091501",
   applicantId: "apl_ci_fixture",
@@ -64,6 +66,18 @@ try {
       [fixture.projectId],
     );
     await client.query(
+      `INSERT INTO project_step_templates
+        (id,project_id,name,sequence,required,due_days)
+       VALUES ($1,$2,'CI 浏览器流程',1,1,7)`,
+      [fixture.stepTemplateId, fixture.projectId],
+    );
+    await client.query(
+      `INSERT INTO project_plan_templates
+        (id,project_id,plan_type,sequence,name,currency,amount_minor,due_days)
+       VALUES ($1,$2,'RECEIVABLE',1,'CI 浏览器应收','USD',10000,30)`,
+      [fixture.planTemplateId, fixture.projectId],
+    );
+    await client.query(
       `INSERT INTO orders
         (id,order_no,agent_id,project_id,project_code_snapshot,project_name_snapshot,country_snapshot,
          project_revision,status,signed_at,owner_user_id,created_at,updated_at,status_changed_at)
@@ -100,15 +114,15 @@ try {
     );
     await client.query(
       `INSERT INTO order_steps
-        (id,order_id,name,sequence,required,status,started_at,created_at,updated_at)
-       VALUES ('step_ci_fixture_1',$1,'CI 当前流程',1,1,'IN_PROGRESS',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
-              ('step_ci_fixture_2',$1,'CI 后续流程',2,1,'PENDING',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+        (id,order_id,name,sequence,required,status,due_date,started_at,created_at,updated_at)
+       VALUES ('step_ci_fixture_1',$1,'CI 当前流程',1,1,'IN_PROGRESS',CURRENT_DATE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+              ('step_ci_fixture_2',$1,'CI 后续流程',2,1,'PENDING',NULL,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
       [fixture.orderId],
     );
     await client.query(
       `INSERT INTO order_plans
-        (id,order_id,plan_type,sequence,name,currency,planned_amount_minor,budget_rate_scaled,planned_base_minor)
-       VALUES ($1,$2,'RECEIVABLE',1,'CI 应收计划','USD',10000,100000000,10000)`,
+        (id,order_id,plan_type,sequence,name,currency,planned_amount_minor,budget_rate_scaled,planned_base_minor,due_date)
+       VALUES ($1,$2,'RECEIVABLE',1,'CI 应收计划','USD',10000,100000000,10000,CURRENT_DATE)`,
       [fixture.planId, fixture.orderId],
     );
     await client.query(

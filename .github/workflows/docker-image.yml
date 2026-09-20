@@ -29,8 +29,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Permission and audit unit tests
-        run: node --test tests/permissions.test.mjs tests/audit-coverage.test.mjs
+      - name: Unit and policy tests
+        run: npm run test:unit
 
       - name: Backup failure and atomic-publish tests
         run: npm run test:backup
@@ -42,6 +42,7 @@ jobs:
         run: |
           cp .env.example .env
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=CiOnly-Owner-Password-2026/' .env
+          sed -i 's#^MRZ_SIDECAR_URL=.*#MRZ_SIDECAR_URL=http://migra-mrz-transfer-test:9999#' .env
           node scripts/prepare-docker-env.mjs
 
       - name: Docker production build and startup
@@ -77,6 +78,17 @@ jobs:
           MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
         run: npm run test:integration
 
+      - name: MRZ streaming, limits and cleanup
+        run: |
+          docker run --rm --name migra-mrz-transfer-test --network migra-backend \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e MIGRA_BASE_URL=http://migra-order-manager:3000 \
+            -e MIGRA_TEST_USERNAME="$MIGRA_TEST_USERNAME" \
+            -e MIGRA_TEST_PASSWORD="$MIGRA_TEST_PASSWORD" \
+            -e MIGRA_TEST_UPLOAD_ROOT=/work/data/files \
+            -e MIGRA_MRZ_TRANSFER_TEST=1 \
+            node:24-bookworm-slim npm run test:mrz-transfer
+
       - name: Install pinned browser test runtime
         run: |
           npm install --prefix "$RUNNER_TEMP/browser-tools" --package-lock=false --ignore-scripts playwright@1.62.1
@@ -89,6 +101,13 @@ jobs:
           MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
           PLAYWRIGHT_MODULE: ${{ runner.temp }}/browser-tools/node_modules/playwright
         run: npm run test:browser
+
+      - name: Current order browser regression
+        timeout-minutes: 5
+        env:
+          MIGRA_BASE_URL: http://127.0.0.1:3000
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/browser-tools/node_modules/playwright
+        run: npm run test:browser:current
 
       - name: Session, password and device security
         env:

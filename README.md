@@ -1,4 +1,4 @@
-# MIGRA V1.0 移民订单管理系统
+# MIGRA 移民订单管理系统
 
 MIGRA 用于跟踪移民订单的代理来源、申请人、项目模板、办理流程、材料文件及订单收付款。项目保存可复用模板；创建订单时复制当前项目版本，此后订单可独立调整，不受模板后续修改影响。
 
@@ -7,7 +7,7 @@ MIGRA 用于跟踪移民订单的代理来源、申请人、项目模板、办�
 - 项目模板：合作渠道、办理流程、应收/应付方案和材料清单均可编辑、排序及版本化；收付款阶段不重复绑定渠道，应付阶段由项目默认渠道带入新订单。
 - 项目包：支持导出单个项目或全部项目为版本化 JSON，并在导入前预检项目简称、渠道和币种冲突；可另存为新项目或覆盖现有模板，已有订单始终不受影响。
 - 材料库：在“材料管理”集中维护常用材料、分类、默认适用范围和必需状态，并支持排序、停用和删除；项目多选导入时只复制内容，不保留关联，后续改动不会影响已有项目和订单。
-- 订单：每位申请人必须上传系统固定的护照首页，并登记姓名、护照号、国籍、出生日期和有效期；图片通过 Docsaid sidecar 识别 MRZ，PDF 在浏览器内逐页渲染后提交识别，人工确认后保存全部结构化字段和校验结果；流程完成后自动启动下一步骤。
+- 订单：申请人只必填系统显示名称，护照首页、护照号、国籍、出生日期和有效期可后续补充；图片通过 Docsaid sidecar 识别 MRZ，PDF 在浏览器内逐页渲染后提交识别，人工确认后保存全部结构化字段和校验结果；流程完成后自动启动下一步骤。
 - 合同与付款：订单只保留签订日期；合同应收总额由应收计划合计表达，合同与付款页集中管理公共材料。
 - 订单收支：仅记录订单实际收款和付款，原币金额、USD 本位币金额和汇率可任选两项填写，第三项自动计算并保存历史快照；不维护账户、科目、换汇或非订单流水。
 - 材料文件：按“订单 / 申请人 / 材料”归档并规范重命名；每位申请人自动建立不可删除、改名或移动的“护照首页”，公共材料归入“合同与付款”；支持 PDF、JPG/JPEG、PNG、WEBP，单文件不超过 20 MB。
@@ -15,7 +15,7 @@ MIGRA 用于跟踪移民订单的代理来源、申请人、项目模板、办�
 - 全局搜索：支持订单、代理、申请人、护照、项目、流程、跟进、收付款金额、材料和文件名；中文名称支持全拼和首字母，使用 `+` 组合条件。
 - MRZ 识别：图片通过主应用调用独立的 Docsaid `two_stage`/CPU sidecar，默认关闭中心裁切和后处理，每张图片只执行一次推理；识别服务单 worker 顺序排队，临时文件处理完成后立即删除。PDF 仍由浏览器内 PDF.js 逐页临时渲染为图片再提交识别。识别结果只用于辅助录入和校验，不代表护照真伪验证。
 - 多用户：内置系统所有者、管理员和只读用户，也可创建自定义角色；用户名和显示姓名均可修改，当前会话不会因改名中断。
-- 双重验证：支持标准 TOTP 动态码、扫码设置、加密密钥和一次性恢复码；公网模式会强制所有者和管理员启用。
+- 双重验证：支持标准 TOTP 动态码、扫码设置、加密密钥和一次性恢复码；公网模式会强制系统所有者启用。
 - 会话安全：默认空闲 60 分钟、绝对 12 小时失效；个人安全页可查看设备、退出单个设备或退出其他所有设备。
 - 文件权限：只读用户可以预览文件，但不能上传、修改、删除或下载。
 - 操作日志：记录登录退出、用户与角色管理、业务修改及文件访问；支持按用户、模块、操作、结果和日期筛选，密码、会话令牌和护照号会脱敏。
@@ -83,7 +83,7 @@ docker stats --no-stream migra-order-manager migra-postgres migra-postgres-backu
 
 MRZ 当前采用 CPU 不限额、内存上限 1536 MiB、单 worker 串行处理；最多 3 个等待任务，单文件 20 MiB，等待文件合计 100 MiB，请求等待 60 秒。中心裁切和后处理均关闭，每张图片只推理一次。资源参数仍受 Docker Desktop/宿主机分配约束。
 
-本地最新同图 10 次压测全部成功，处理耗时 P50 为 0.695 秒、P95 为 1.259 秒。用户已确认识别与字段核对、申请人完整流程、异常处理三项业务验收通过。详细配置、数据来源、运行检查和故障排查见 [MRZ 部署与验收记录](docs/MRZ_SIDECAR_POC_2026-09-14.md)。
+MRZ 的当前参数、验证边界、运行检查和故障排查见 [MRZ 服务说明](docs/MRZ_SIDECAR_POC_2026-09-14.md)。历史压测数字不作为当前源码或目标服务器的验收结论。
 
 ### 数据与备份
 
@@ -112,9 +112,39 @@ MRZ 当前采用 CPU 不限额、内存上限 1536 MiB、单 worker 串行处理
 CONFIRM_RESTORE=YES ./scripts/restore-postgres.sh backups/postgres/migra-YYYYMMDD-HHMMSS.dump
 ```
 
+## NAS 内网与 Lucky 公网同时使用
+
+NAS 上由 Lucky 终止 HTTPS 并反向代理时，使用 `docker-compose.nas.yml`。以下为部署示例，实际域名、端口和 NAS 地址应按目标环境填写：
+
+```dotenv
+NAS_BIND_ADDRESS=192.168.3.13
+APP_PORT=3000
+APP_ORIGIN=https://order.tcvisa.vip:8888
+PUBLIC_DEPLOYMENT=1
+REQUIRE_PRIVILEGED_MFA=1
+```
+
+- `NAS_BIND_ADDRESS` 是 NAS 的固定内网 IP；内网访问地址为 `http://192.168.3.13:3000`。
+- `APP_ORIGIN` 只填写一个正式公网来源，必须包含 `https://`；使用非标准端口时必须包含端口。它不能带 `/lucky` 等路径，也不能写成 `0.0.0.0`。
+- 内网地址不写入 `APP_ORIGIN`。浏览器直接访问 NAS 时，只要页面来源与请求的 Host 相同，登录和业务写入都会被允许；真正的第三方跨站请求仍会被拒绝。
+- `PUBLIC_DEPLOYMENT=1` 启用公网安全策略。当前只强制系统所有者启用双重验证；管理员、只读用户和自定义角色可按需启用。`REQUIRE_PRIVILEGED_MFA` 是为兼容既有配置保留的变量名。
+- 内网地址和公网域名属于两个浏览器站点，会分别保存登录 Cookie，因此第一次切换地址时需要重新登录。
+
+Lucky 的 Web 服务应把前端 `https://order.tcvisa.vip:8888` 反向代理到后端 `http://192.168.3.13:3000`，并传递原始 Host、`X-Forwarded-Host` 和 `X-Forwarded-Proto: https`。修改域名、外网端口或 NAS IP 时，必须同时更新 Lucky 与 `.env` 中对应的值。
+
+部署及以后覆盖更新都使用同一组 Compose 文件：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.nas.yml ps
+docker compose -f docker-compose.yml -f docker-compose.nas.yml logs --tail=100 migra
+```
+
+详细配置、验证命令和常见错误见 [NAS 内外网部署说明](docs/NAS_ACCESS.md)。
+
 ## 公网部署前
 
-当前 Compose 只监听本机，适合本地开发和验收。仓库已提供 `docker-compose.public.yml` 与 `Caddyfile` 作为公网标准模板；它会只开放 80/443、移除应用和 PostgreSQL 的宿主机端口，并启用 HTTPS、正式 Origin、Secure Cookie、HSTS、代理请求头覆盖和高权限 MFA 策略。没有正式域名、服务器和异地备份位置时不要启动该配置。
+不使用 Lucky、改由项目自带 Caddy 直接提供公网 HTTPS 时，使用 `docker-compose.public.yml` 与 `Caddyfile`。该方案只开放 80/443、移除应用和 PostgreSQL 的宿主机端口，并启用 HTTPS、正式 Origin、Secure Cookie、HSTS、代理请求头覆盖和系统所有者 MFA 策略。它与上面的 NAS + Lucky 方案二选一。
 
 正式部署时先设置 `MIGRA_DOMAIN`，再使用基础文件与公网覆盖文件共同启动：
 
@@ -129,7 +159,7 @@ docker compose -f docker-compose.yml -f docker-compose.public.yml up -d --build
 - 配置域名、HTTPS、可信反向代理和防火墙。
 - 运行 `npm run deployment:verify`，并使用最新备份实际完成一次隔离恢复演练。
 - 上传文件不做服务器备份，应确保电脑端原始文件留档完整。
-- 所有系统所有者和管理员在“登录与安全”中启用双重验证并妥善保存恢复码。
+- 系统所有者在“登录与安全”中启用双重验证并妥善保存恢复码；其他账号可按需启用。
 - 把数据库备份加密复制到另一位置；上传文件仍不复制。
 - 限制服务器上 Docker、`.env`、初始凭据和容器日志的读取权限。
 
@@ -141,7 +171,7 @@ docker compose -f docker-compose.yml -f docker-compose.public.yml up -d --build
 - Docker Compose
 - 本位币：USD
 
-## 低配置服务器优化（2026-09-10）
+## 低资源部署边界
 
 本版继续使用 PostgreSQL 搜索表，不需要 Redis。订单、代理、申请人、护照、流程、跟进、待办、金额、材料、历史文件名称/状态与结案说明参与搜索；不提取 PDF 正文或图片文字。
 
@@ -164,13 +194,13 @@ docker compose -f docker-compose.yml -f docker-compose.low-resource.yml up -d
 
 `docker-compose.low-resource.yml` 设置应用768MiB、PostgreSQL640MiB、备份128MiB的容器上限及较小连接池；MRZ 继续继承主 Compose 的1536MiB上限且不限CPU。四个服务上限合计3072MiB，上限不是预留或实测常驻占用，也不保证特定并发容量；需要给系统、代理和页缓存留空间。文件临时目录使用持久化磁盘，避免把20MiB文件写入内存型 `/tmp`。
 
-**升级顺序**：部署新镜像并先完成迁移0019，再启动应用。不要把新前端与旧API混用。0019为增量结构迁移；回退旧应用时可暂时保留新队列、触发器和索引，确认不再使用后再单独清理。本次未删除旧搜索字段/索引。
+**升级顺序**：始终使用同一份当前源码构建前后端，并由 `postgres_migrate` 在主应用启动前顺序执行全部未应用迁移。不要把新前端与旧 API 混用，也不要删除已经发布的迁移文件。
 
-验证：`npm test` 包含类型/生产构建、权限、审计、金额和文件范围/哈希测试；`npm run test:integration` 增加全订单搜索、分页、并发冲突、20MiB上传边界等回归。集成测试需使用隔离数据库、测试账号及 `MIGRA_BASE_URL`、`MIGRA_DATABASE_URL`、`MIGRA_TEST_CREDENTIAL_FILE`；CI 还会先创建可重复清理的确定性业务夹具，缺少基础数据将直接失败而不跳过。有文件写入时设置 `MIGRA_TEST_UPLOAD_ROOT` 到测试服务实际使用的临时上传目录。测试不能对生产数据运行。
+验证：`npm test` 运行 ESLint、TypeScript、Docker 目标生产构建及单元/策略测试；`npm run test:backup` 和 `npm run test:prepare` 验证运维脚本。`npm run test:integration` 只允许连接隔离应用和隔离数据库，并要求 `MIGRA_BASE_URL`、`MIGRA_DATABASE_URL`、`MIGRA_TEST_USERNAME`、`MIGRA_TEST_PASSWORD`；缺少环境变量直接失败。它覆盖订单生命周期、数据范围、数据库约束、搜索、分页、日期、申请人、排序和提醒等当前行为。MRZ 上传限流使用 `npm run test:mrz-transfer` 在受控假 sidecar 环境验证，不能对生产服务运行。
 
-### 搜索浏览器 CI 与后续事项
+### 浏览器 CI
 
-CI 在隔离 Docker 环境中运行 `npm run test:browser`，使用固定版本 Playwright Chromium，覆盖搜索退避、截止、请求取消与结果状态保留。浏览器测试通过后才允许发布镜像。宿主机可通过 `PLAYWRIGHT_MODULE`、`CHROME_PATH`、`MIGRA_BASE_URL` 和 `MIGRA_TEST_CREDENTIAL_FILE` 指定测试环境。
+CI 在隔离 Docker 环境中使用固定版本 Playwright Chromium。`npm run test:browser` 覆盖搜索退避、截止、请求取消与结果状态保留；`npm run test:browser:current` 覆盖首页提醒跳转、订单列表服务端排序，以及新订单签订日期联动模板日期、手工日期保持和仅姓名申请人建单。两组浏览器测试通过后才允许发布镜像。宿主机可通过 `PLAYWRIGHT_MODULE`、`CHROME_PATH`、`MIGRA_BASE_URL` 和 `MIGRA_TEST_CREDENTIAL_FILE` 指定测试环境。
 
 数据库备份统一使用 `scripts/backup-postgres.sh`。恢复演练及正式恢复后的附件一致性检查均遵循“不备份附件”的约定。
 
@@ -178,6 +208,6 @@ CI 在隔离 Docker 环境中运行 `npm run test:browser`，使用固定版本 
 
 - [当前状态与后续工作](docs/IMPLEMENTATION_PLAN.md)
 - [开发规范](docs/DEVELOPMENT.md)
-- [源码维护审阅](docs/CODE_QUALITY.md)
-- [MRZ部署与验收](docs/MRZ_SIDECAR_POC_2026-09-14.md)
+- [当前源码审阅与验证](docs/CODE_QUALITY.md)
+- [MRZ 服务说明](docs/MRZ_SIDECAR_POC_2026-09-14.md)
 - [历史性能基线](docs/PERFORMANCE_REPORT_2026-09-11.md)

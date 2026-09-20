@@ -265,7 +265,7 @@ function toUser(row: Record<string, unknown>, permissions: string[]): AppUser {
     roleId: String(row.role_id), roleCode, roleName: String(row.role_name),
     orderScope: row.role_code === "OWNER" || row.order_scope !== "OWN" ? "ALL" : "OWN", permissions,
     mustChangePassword: Number(row.must_change_password) === 1, mfaEnabled,
-    mfaRequired: privilegedMfaPolicyEnabled() && (roleCode === "OWNER" || roleCode === "ADMIN") && !mfaEnabled };
+    mfaRequired: privilegedMfaPolicyEnabled() && roleCode === "OWNER" && !mfaEnabled };
 }
 
 export async function authenticateDockerUser(username: string, password: string, metadata: { ip?: string; userAgent?: string; mfaCode?: string }) {
@@ -319,7 +319,7 @@ export async function authenticateDockerUser(username: string, password: string,
   return { token, user: toUser(row, await permissionsForRole(String(row.role_id), String(row.role_code))) };
 }
 
-export async function verifyDockerSession(token: string | undefined) {
+export async function verifyDockerSession(token: string | undefined, touchActivity = true) {
   if (!token) return null;
   const db = getDatabase();
   const tokenHash = await digest(token);
@@ -334,7 +334,7 @@ export async function verifyDockerSession(token: string | undefined) {
       .bind(now.toISOString(), tokenHash, now.toISOString(), idleCutoff).run();
     return null;
   }
-  if (Date.now() - new Date(String(row.last_seen_at)).getTime() > 15 * 60_000) {
+  if (touchActivity && Date.now() - new Date(String(row.last_seen_at)).getTime() > 15 * 60_000) {
     await db.prepare("UPDATE user_sessions SET last_seen_at=? WHERE id=?").bind(nowIso(), row.session_id).run();
   }
   return toUser(row, await permissionsForRole(String(row.role_id), String(row.role_code)));

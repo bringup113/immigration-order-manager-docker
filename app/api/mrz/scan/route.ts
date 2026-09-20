@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireMutationUser } from "@/lib/api-auth";
 import { writeAuditBestEffort } from "@/lib/audit";
+import { createReadStream } from "node:fs";
+import { acquireTransfer, receiveMaterialUpload } from "@/lib/file-transfer";
 import { DomainError } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 
 function errorResponse(error: unknown) {
   if (error instanceof DomainError) return jsonError(error.message, error.status);
@@ -18,34 +17,29 @@ function errorResponse(error: unknown) {
 export async function POST(request: NextRequest) {
   const auth = await requireMutationUser(request, "applicants.mrz");
   if (auth.response) return auth.response;
+  let release: (() => void) | undefined;
+  let upload: Awaited<ReturnType<typeof receiveMaterialUpload>> | undefined;
+  let stream: ReturnType<typeof createReadStream> | undefined;
   try {
-    const form = await request.formData();
-    const entry = form.get("file");
-    if (!(entry instanceof File)) throw new DomainError("请选择护照首页图片。", 400);
-    const file = entry;
-    const type = file.type.toLowerCase();
-    const extension = file.name.toLowerCase();
-    if (!ALLOWED_TYPES.has(type) && !/\.(jpe?g|png|webp)$/.test(extension)) {
-      throw new DomainError("MRZ 服务目前只接受 JPG、JPEG、PNG 或 WEBP 图片。", 415);
-    }
-    if (file.size <= 0 || file.size > MAX_FILE_BYTES) {
-      throw new DomainError("护照图片不能超过 20 MB。", 413);
-    }
-
+    release = acquireTransfer("mrz", 2);
+    upload = await receiveMaterialUpload(request, []);
+    if (upload.detected.extension === "pdf") throw new DomainError("MRZ 服务只接受护照首页图片。", 415);
+    const type = upload.detected.mimeType;
     const sidecarUrl = (process.env.MRZ_SIDECAR_URL || "http://mrzscanner_poc:8080").replace(/\/$/, "");
-    const body = Buffer.from(await file.arrayBuffer());
+    stream = createReadStream(upload.path, {highWaterMark: 64 * 1024});
     let response: Response;
     try {
       response = await fetch(`${sidecarUrl}/scan?include_raw=1`, {
         method: "POST",
         headers: {
           "Content-Type": type || "application/octet-stream",
-          "Content-Length": String(body.byteLength),
-          "X-Filename": file.name,
+          "Content-Length": String(upload.size),
+          "X-Filename": `passport.${upload.detected.extension}`,
         },
-        body,
-        signal: AbortSignal.timeout(70_000),
-      });
+        body: stream as unknown as BodyInit,
+        duplex: "half",
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(70_000)]),
+      } as RequestInit & {duplex: "half"});
     } catch {
       throw new DomainError("MRZ 识别服务暂时不可用，请确认 sidecar 已启动。", 503);
     }
@@ -67,7 +61,7 @@ export async function POST(request: NextRequest) {
       entityType: "APPLICANT_MRZ",
       result: "SUCCESS",
       summary: "调用 MRZ 识别服务",
-      changes: { mimeType: type || null, sizeBytes: file.size, detected: payload.mrz_detected === true },
+      changes: { mimeType: type || null, sizeBytes: upload.size, detected: payload.mrz_detected === true },
     });
     return NextResponse.json(payload, { status: 200 });
   } catch (error) {
@@ -78,5 +72,8 @@ export async function POST(request: NextRequest) {
       summary: error instanceof DomainError ? error.message : "调用 MRZ 识别服务失败",
     });
     return errorResponse(error);
+  } finally {
+    stream?.destroy();
+    try { await upload?.cleanup(); } finally { release?.(); }
   }
 }

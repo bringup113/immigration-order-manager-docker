@@ -1,5 +1,7 @@
 "use client";
 
+import { dateAfter, rebaseTemplateDates } from "@/lib/order-template-dates";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -66,6 +68,8 @@ type Step = {
   name: string;
   required: boolean;
   dueDate: string;
+  dueDays?: number | null;
+  dueDateMode?: "template" | "manual";
   notes?: string;
 };
 type PlanType = "RECEIVABLE" | "PAYABLE";
@@ -76,6 +80,8 @@ type Plan = {
   currency: string;
   amount: string;
   dueDate: string;
+  dueDays?: number | null;
+  dueDateMode?: "template" | "manual";
   channelId: string;
   notes?: string;
 };
@@ -165,12 +171,6 @@ const materialScopeLabels: Record<MaterialScope, string> = {
   DEPENDENT: "每位附属申请人",
 };
 
-function dateAfter(date: string, days: number | null) {
-  if (days === null) return "";
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
 
 export default function NewOrderPage() {
   const router = useRouter();
@@ -188,6 +188,7 @@ export default function NewOrderPage() {
   const [signedAt, setSignedAt] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const signedAtRef = useRef(signedAt);
   const [applicants, setApplicants] = useState<Applicant[]>(() => [
     newApplicant("MAIN", "main"),
   ]);
@@ -287,7 +288,9 @@ export default function NewOrderPage() {
           templateId: row.id,
           name: row.name,
           required: Boolean(row.required),
-          dueDate: dateAfter(signedAt, row.due_days),
+          dueDate: dateAfter(signedAtRef.current, row.due_days),
+          dueDays: row.due_days,
+          dueDateMode: "template",
           notes: row.notes || "",
         })),
     );
@@ -300,7 +303,9 @@ export default function NewOrderPage() {
           name: row.name,
           currency: row.currency,
           amount: row.amount_minor ? String(row.amount_minor / 100) : "",
-          dueDate: dateAfter(signedAt, row.due_days),
+          dueDate: dateAfter(signedAtRef.current, row.due_days),
+          dueDays: row.due_days,
+          dueDateMode: "template",
           channelId: row.plan_type === "PAYABLE" ? defaultChannel : "",
           notes: row.notes || "",
         })),
@@ -317,7 +322,7 @@ export default function NewOrderPage() {
           notes: row.notes || "",
         })),
     );
-    void refreshOrderNumber(value, signedAt);
+    void refreshOrderNumber(value, signedAtRef.current);
   }
 
   function addPlan(planType: PlanType) {
@@ -418,11 +423,6 @@ export default function NewOrderPage() {
       applicants.every(
         (item) =>
           item.name.trim() &&
-          item.passportNo.trim() &&
-          item.nationality.trim() &&
-          item.birthDate &&
-          item.passportExpiry &&
-          item.passportFile &&
           !item.recognizing,
       ) &&
       plans.length > 0 &&
@@ -471,7 +471,8 @@ export default function NewOrderPage() {
             clientKey: string;
           }[]
         ).find((row) => row.clientKey === item.clientKey);
-        if (!created || !item.passportFile)
+        if (!item.passportFile) continue;
+        if (!created)
           throw new Error(
             "订单已建立，但护照首页关联失败，请进入订单详情重新上传。",
           );
@@ -609,7 +610,10 @@ export default function NewOrderPage() {
                 value={signedAt}
                 onChange={(event) => {
                   const value = event.target.value;
+                  signedAtRef.current = value;
                   setSignedAt(value);
+                  setSteps(current => rebaseTemplateDates(current, value));
+                  setPlans(current => rebaseTemplateDates(current, value));
                   void refreshOrderNumber(projectId, value);
                 }}
               />
@@ -632,7 +636,7 @@ export default function NewOrderPage() {
 
         <Section
           title="2. 申请人与护照资料"
-          note="每位申请人必须上传护照首页。图片和 PDF 会提交到 MRZ 识别服务处理；系统显示姓名为空时会自动采用护照英文姓名。"
+          note="只需填写系统显示名称即可创建订单；护照首页及其他身份资料可稍后在订单详情补充。上传图片或 PDF 后可辅助识别。"
           action={
             <Button
               type="button"
@@ -774,7 +778,7 @@ export default function NewOrderPage() {
                       }
                     />
                   </Field>
-                  <Field label="护照号码 *">
+                  <Field label="护照号码">
                     <Input
                       className="mt-2 uppercase"
                       value={row.passportNo}
@@ -785,7 +789,7 @@ export default function NewOrderPage() {
                       }
                     />
                   </Field>
-                  <Field label="国籍 *">
+                  <Field label="国籍">
                     <Input
                       className="mt-2 uppercase"
                       value={row.nationality}
@@ -796,7 +800,7 @@ export default function NewOrderPage() {
                       }
                     />
                   </Field>
-                  <Field label="出生日期 *">
+                  <Field label="出生日期">
                     <Input
                       className="mt-2"
                       type="date"
@@ -829,7 +833,7 @@ export default function NewOrderPage() {
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field label="护照有效期 *">
+                  <Field label="护照有效期">
                     <Input
                       className="mt-2"
                       type="date"
@@ -931,7 +935,7 @@ export default function NewOrderPage() {
                       setSteps(
                         steps.map((item, itemIndex) =>
                           itemIndex === index
-                            ? { ...item, dueDate: event.target.value }
+                            ? { ...item, dueDate: event.target.value, dueDateMode: "manual" as const }
                             : item,
                         ),
                       )
@@ -1076,7 +1080,7 @@ export default function NewOrderPage() {
                         setPlans(
                           plans.map((item, itemIndex) =>
                             itemIndex === index
-                              ? { ...item, dueDate: event.target.value }
+                              ? { ...item, dueDate: event.target.value, dueDateMode: "manual" as const }
                               : item,
                           ),
                         )

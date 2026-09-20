@@ -66,13 +66,13 @@ const today = () => {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 };
 
-export function OrderDetail({ orderNo }: { orderNo: string }) {
+export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: string; initialTab?: string }) {
   const currencies = useApiList<CurrencyOption>("currencies");
   const [data, setData] = useState<OrderDetailData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<OrderDetailDialog>(null);
-  const [activeTab, setActiveTab] = useState("workflow");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [selectedApplicantId, setSelectedApplicantId] = useState("");
   const [message, setMessage] = useState("");
   const [previewFile, setPreviewFile] = useState<Row | null>(null);
@@ -161,10 +161,8 @@ export function OrderDetail({ orderNo }: { orderNo: string }) {
     return () => readController.current?.abort();
   }, [load]);
   useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("tab");
-    if (["workflow", "finance", "people", "common"].includes(requested || ""))
-      setActiveTab(String(requested));
-  }, []);
+    setActiveTab(initialTab);
+  }, [initialTab, orderNo]);
   useEffect(() => {
     if (
       permissionsLoaded &&

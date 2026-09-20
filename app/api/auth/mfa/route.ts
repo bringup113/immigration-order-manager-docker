@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "disable" || action === "recoveryCodes") {
-    if (action === "disable" && privilegedMfaPolicyEnabled() && (auth.user.roleCode === "OWNER" || auth.user.roleCode === "ADMIN")) {
-      return jsonError("公网运行时，系统所有者和管理员不能关闭双重验证。", 409);
+    if (action === "disable" && privilegedMfaPolicyEnabled() && auth.user.roleCode === "OWNER") {
+      return jsonError("公网运行时，系统所有者不能关闭双重验证。", 409);
     }
     const password = String(body.password || "");
     const code = String(body.code || "");

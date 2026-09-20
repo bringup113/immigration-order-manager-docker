@@ -54,6 +54,7 @@ export type PlanDraft = {
 };
 
 export type CashDraft = {
+  autoDescription?: string | null;
   direction: CashDirection;
   entryDate: string;
   description: string;

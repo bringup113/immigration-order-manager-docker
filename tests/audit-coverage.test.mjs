@@ -161,15 +161,25 @@ test("agent management is permissioned, audited, and protects the company-direct
   assert.match(migration, /system_managed/);
 });
 
-test("session self-service and public privileged MFA are enforced and audited", () => {
+test("session self-service and public owner MFA are enforced and audited", () => {
   const sessions = readFileSync("app/api/auth/sessions/route.ts", "utf8");
   const apiAuth = readFileSync("lib/api-auth.ts", "utf8");
+  const dockerAuth = readFileSync("lib/docker-auth.ts", "utf8");
   const mfa = readFileSync("app/api/auth/mfa/route.ts", "utf8");
   assert.match(sessions, /requireMutationUser/);
   assert.match(sessions, /AUTH_SESSION_REVOKE_OTHERS/);
   assert.match(sessions, /writeAuditBestEffort/);
   assert.match(apiAuth, /MFA_SETUP_REQUIRED/);
   assert.match(mfa, /privilegedMfaPolicyEnabled/);
+  assert.match(dockerAuth, /privilegedMfaPolicyEnabled\(\) && roleCode === "OWNER" && !mfaEnabled/);
+  assert.doesNotMatch(dockerAuth, /roleCode === "OWNER" \|\| roleCode === "ADMIN"/);
+  assert.match(mfa, /privilegedMfaPolicyEnabled\(\) && auth\.user\.roleCode === "OWNER"/);
+});
+
+test("configured public origin does not block same-host LAN mutations", () => {
+  const apiAuth = readFileSync("lib/api-auth.ts", "utf8");
+  assert.match(apiAuth, /requestOrigin\.origin === new URL\(configuredOrigin\)\.origin/);
+  assert.match(apiAuth, /requestOrigin\.host === host/);
 });
 
 test("first-run owner is created by the user and the initialization is audited", () => {

@@ -301,12 +301,11 @@ export function OrderDetailPeopleDialogs({
               {editingApplicantId ? "修改申请人资料" : "添加附属申请人"}
             </DialogTitle>
             <DialogDescription>
-              护照首页是每位申请人的系统固定材料；新增申请人后会自动建立。姓名、护照号码、国籍、出生日期和有效期为必填。
+              护照首页是每位申请人的系统固定材料；新增申请人后会自动建立。只需填写系统显示名称，其余资料可后续补充。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <PassportIdentityFields
-              required
               value={applicant}
               onChange={(value) =>
                 onApplicantChange({
@@ -342,11 +341,7 @@ export function OrderDetailPeopleDialogs({
             </Button>
             <Button
               disabled={
-                !applicant.name.trim() ||
-                !applicant.passportNo.trim() ||
-                !applicant.nationality.trim() ||
-                !applicant.birthDate ||
-                !applicant.passportExpiry
+                !applicant.name.trim()
               }
               onClick={() => void onSaveApplicant()}
               className="bg-[#0f766e]"

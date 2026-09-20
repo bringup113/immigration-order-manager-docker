@@ -19,6 +19,7 @@ import {
 import { formatMoney } from "@/lib/amount";
 import { useApiPage } from "@/lib/use-api";
 import { usePermissions } from "@/lib/use-permissions";
+import { orderSortOptions } from "@/lib/order-sort";
 
 type Order = {
   id: string;
@@ -114,6 +115,7 @@ export default function OrdersPage() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [owner, setOwner] = useState("ALL");
+  const [sort, setSort] = useState("signed_desc");
   const [page, setPage] = useState(1);
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -124,10 +126,12 @@ export default function OrdersPage() {
   }, [query]);
   const params = new URLSearchParams({
     page: String(page),
+    pageSize: "10",
     q: search,
+    sort,
     ...(owner === "ALL" ? {} : { owner }),
   });
-  const { rows, loading, error, hasMore, owners } = useApiPage<Order>(
+  const { rows, loading, error, hasMore, owners, totalPages, total } = useApiPage<Order>(
     `orders?${params}`,
   );
   const visible = rows;
@@ -168,6 +172,24 @@ export default function OrdersPage() {
                 className="h-10 bg-slate-50 pl-9"
               />
             </div>
+            <Select
+              value={sort}
+              onValueChange={(value) => {
+                setSort(value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[210px]" aria-label="订单排序">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {orderSortOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {owners.length > 1 && (
               <Select
                 value={owner}
@@ -190,7 +212,7 @@ export default function OrdersPage() {
               </Select>
             )}
             <Badge variant="outline" className="ml-auto">
-              第 {page} 页 · {visible.length} 张订单
+              总计：{total} 张订单
             </Badge>
           </div>
           {loading && <LoadingState />}
@@ -309,7 +331,7 @@ export default function OrdersPage() {
             >
               上一页
             </Button>
-            <span className="text-sm">第 {page} 页</span>
+            <span className="text-sm">第 {page} / {totalPages} 页</span>
             <Button
               variant="outline"
               disabled={loading || !hasMore}

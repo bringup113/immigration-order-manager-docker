@@ -3,9 +3,11 @@ import type { ChatGPTUser } from "@/app/chatgpt-auth";
 import { hasPermission } from "@/lib/docker-auth";
 import { orderScopeFilter } from "@/lib/order-access";
 import { likePattern, searchTerms } from "@/lib/order-search";
+import { orderSortSql } from "@/lib/order-sort";
 
 export async function listOrders(user: ChatGPTUser, params: URLSearchParams) {
   const db = getDatabase();
+  const sortSql = orderSortSql(params.get("sort"));
   const scope = orderScopeFilter(user, "o");
   const page = Math.min(100000, Math.max(1, parseInt(params.get("page") || "1", 10) || 1));
   const pageSize = Math.min(100, Math.max(1, parseInt(params.get("pageSize") || "30", 10) || 30));
@@ -19,8 +21,17 @@ export async function listOrders(user: ChatGPTUser, params: URLSearchParams) {
     values.push(...domains.map(() => likePattern(term)));
   }
   const finance = hasPermission(user, "finance.read");
+
+const countRow = await db
+  .prepare(`SELECT COUNT(*) AS total FROM orders o WHERE ${filters.join(" AND ")}`)
+  .bind(...values)
+  .first();
+
+const total = Number(countRow?.total || 0);
+const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
   const rows = await db.prepare(`WITH page AS MATERIALIZED (
-      SELECT o.* FROM orders o WHERE ${filters.join(" AND ")} ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?
+      SELECT o.* FROM orders o WHERE ${filters.join(" AND ")} ORDER BY ${sortSql} LIMIT ? OFFSET ?
     ) SELECT o.id,o.order_no,o.status,o.owner_user_id,o.created_at,c.name AS agent_name,
       u.display_name AS owner_name,u.username AS owner_username,o.project_name_snapshot AS project_name,o.country_snapshot AS country,
       (SELECT name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' LIMIT 1) AS main_applicant,
@@ -34,7 +45,7 @@ export async function listOrders(user: ChatGPTUser, params: URLSearchParams) {
       LEFT JOIN LATERAL (SELECT COALESCE(NULLIF(g.next_action,''),g.title) AS title,g.follow_up_date FROM order_progress g WHERE g.order_id=o.id AND g.follow_up_done=0 AND g.follow_up_date IS NOT NULL ORDER BY g.follow_up_date,g.created_at DESC LIMIT 1) follow ON TRUE
       ${finance ? `LEFT JOIN LATERAL (SELECT COALESCE(SUM(planned_base_minor) FILTER(WHERE plan_type='RECEIVABLE'),0) AS receivable_base_minor,COALESCE(SUM(planned_base_minor) FILTER(WHERE plan_type='PAYABLE'),0) AS payable_base_minor FROM order_plans WHERE order_id=o.id) plans ON TRUE
       LEFT JOIN LATERAL (SELECT COALESCE(SUM(base_amount_minor) FILTER(WHERE direction='RECEIPT'),0) AS received_base_minor,COALESCE(SUM(base_amount_minor) FILTER(WHERE direction='PAYMENT'),0) AS paid_base_minor FROM order_cash_entries WHERE order_id=o.id AND status='ACTIVE') cash ON TRUE` : ""}
-      ORDER BY o.created_at DESC,o.id DESC`).bind(...values,pageSize+1,(page-1)*pageSize).all();
+      ORDER BY ${sortSql}`).bind(...values,pageSize+1,(page-1)*pageSize).all();
   const owners = await db.prepare(`SELECT u.id,u.display_name AS name,u.username FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.owner_user_id=u.id AND ${scope.sql}) ORDER BY u.display_name,u.id`).bind(...scope.values).all();
-  return { rows: rows.results.slice(0,pageSize),page,pageSize,hasMore: rows.results.length>pageSize,owners: owners.results };
+  return { rows: rows.results.slice(0,pageSize),page,pageSize,total,totalPages,hasMore: rows.results.length>pageSize,owners: owners.results };
 }

@@ -19,7 +19,7 @@ export function acquireTransfer(kind:string, limit:number) {
   return () => {if(!released){released=true;counts.set(kind,(counts.get(kind)||1)-1);}};
 }
 
-export async function receiveMaterialUpload(request:Request) {
+export async function receiveMaterialUpload(request:Request, allowedFields = ["orderNo","materialId","replaceFileId","reason"]) {
   const maxRequest=MAX_MATERIAL_FILE_SIZE+64*1024;
   if(Number(request.headers.get("content-length"))>maxRequest) throw new DomainError("上传请求过大。",413);
   if(!request.body) throw new DomainError("请选择文件。");
@@ -44,7 +44,7 @@ export async function receiveMaterialUpload(request:Request) {
   const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
   const fail=(error:Error) => { failure??=error; queueMicrotask(()=>{if(!parser.destroyed)parser.destroy(error);}); };
   parser.on("field",(name,value,info)=>{
-    if(!["orderNo","materialId","replaceFileId","reason"].includes(name) || Object.hasOwn(fields,name) || info.valueTruncated || info.nameTruncated) fail(new DomainError("上传字段不正确或过长。"));
+    if(!allowedFields.includes(name) || Object.hasOwn(fields,name) || info.valueTruncated || info.nameTruncated) fail(new DomainError("上传字段不正确或过长。"));
     else fields[name]=value.trim();
   });
   for(const event of ["filesLimit","fieldsLimit","partsLimit"] as const) parser.on(event,()=>fail(new DomainError("每次只能上传一个文件，且字段数量不能超限。",413)));
