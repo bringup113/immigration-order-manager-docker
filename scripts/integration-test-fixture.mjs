@@ -36,7 +36,10 @@ async function removeFixture() {
          OR request_id LIKE 'ci-fixture:%'`,
     [[fixture.orderId, fixture.orderNo, fixture.fileId, fixture.planId, fixture.cashId]],
   );
-  await client.query("DELETE FROM orders WHERE id=$1", [fixture.orderId]);
+  await client.query(
+    "DELETE FROM orders WHERE id=$1 OR project_id=$2",
+    [fixture.orderId, fixture.projectId],
+  );
   await client.query("DELETE FROM projects WHERE id=$1", [fixture.projectId]);
   await client.query("DELETE FROM agents WHERE id=$1", [fixture.agentId]);
 }
