@@ -24,14 +24,20 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
         ? db
             .prepare(
               `WITH plans AS MATERIALIZED (
-      SELECT op.id,op.plan_type,op.planned_base_minor FROM order_plans op JOIN orders o ON o.id=op.order_id
+      SELECT op.id,op.plan_type,op.planned_amount_minor,op.planned_base_minor FROM order_plans op JOIN orders o ON o.id=op.order_id
       WHERE o.status IN ('DRAFT','ACTIVE','PAUSED') AND ${orderScope.sql}
     ), allocations AS (
-      SELECT e.order_plan_id,e.direction,SUM(e.base_amount_minor) AS total FROM order_cash_entries e JOIN plans p ON p.id=e.order_plan_id
+      SELECT e.order_plan_id,e.direction,SUM(e.plan_amount_minor) AS total FROM order_cash_entries e JOIN plans p ON p.id=e.order_plan_id
       WHERE e.status='ACTIVE' GROUP BY e.order_plan_id,e.direction
-    ) SELECT COALESCE(SUM(GREATEST(0,p.planned_base_minor-COALESCE(a.total,0))) FILTER(WHERE p.plan_type='RECEIVABLE'),0) AS receivable,
-      COALESCE(SUM(GREATEST(0,p.planned_base_minor-COALESCE(a.total,0))) FILTER(WHERE p.plan_type='PAYABLE'),0) AS payable
-      FROM plans p LEFT JOIN allocations a ON a.order_plan_id=p.id AND a.direction=CASE p.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END`,
+    ), remaining AS (
+      SELECT p.plan_type,ROUND(
+        GREATEST(0,p.planned_amount_minor-COALESCE(a.total,0))::numeric
+        * p.planned_base_minor / NULLIF(p.planned_amount_minor,0)
+      ) AS base_minor
+      FROM plans p LEFT JOIN allocations a ON a.order_plan_id=p.id AND a.direction=CASE p.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END
+    ) SELECT COALESCE(SUM(base_minor) FILTER(WHERE plan_type='RECEIVABLE'),0) AS receivable,
+      COALESCE(SUM(base_minor) FILTER(WHERE plan_type='PAYABLE'),0) AS payable
+      FROM remaining`,
             )
             .bind(...orderScope.values)
             .first()

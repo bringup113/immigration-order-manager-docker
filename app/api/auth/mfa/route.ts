@@ -27,25 +27,72 @@ export async function POST(request: NextRequest) {
   const now = nowIso();
 
   if (action === "begin") {
+    let reauthToken: string | null = null;
+    if (row.mfa_secret_ciphertext) {
+      const password = String(body.password || "");
+      const currentCode = String(body.currentCode || "");
+      if (
+        !password ||
+        !currentCode ||
+        !await verifyPassword(password, String(row.password_hash)) ||
+        !await verifyUserMfa(
+          auth.user.id,
+          String(row.mfa_secret_ciphertext),
+          row.mfa_recovery_hashes ? String(row.mfa_recovery_hashes) : null,
+          currentCode,
+        )
+      ) {
+        return jsonError("当前密码或双重验证码不正确。", 403);
+      }
+      reauthToken = await encryptMfaSecret(JSON.stringify({
+        userId: auth.user.id,
+        currentSecret: row.mfa_secret_ciphertext,
+        expiresAt: Date.now() + 5 * 60_000,
+      }));
+    }
     const secret = generateMfaSecret();
     await db.transaction(async (tx) => {
       await tx.prepare("UPDATE users SET mfa_pending_secret_ciphertext=?,updated_at=? WHERE id=?").bind(await encryptMfaSecret(secret), now, auth.user.id).run();
       await writeAudit(request, auth.user, { action: "AUTH_MFA_SETUP_BEGIN", entityType: "USER", entityId: auth.user.id, entityLabel: auth.user.username, summary: "开始设置双重验证" }, tx);
     });
     const label = encodeURIComponent(`MIGRA:${auth.user.username}`);
-    return NextResponse.json({ secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=MIGRA&algorithm=SHA1&digits=6&period=30` });
+    return NextResponse.json({ secret, reauthToken, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=MIGRA&algorithm=SHA1&digits=6&period=30` });
   }
 
   if (action === "enable") {
-    if (!row.mfa_pending_secret_ciphertext) return jsonError("请先生成双重验证密钥。", 409);
-    const secret = await decryptMfaSecret(String(row.mfa_pending_secret_ciphertext));
-    if (!await verifyTotp(secret, String(body.code || ""))) return jsonError("验证码不正确，请确认手机时间准确后重试。", 403);
+    let proof: Record<string, unknown> | null = null;
+    if (body.reauthToken) {
+      try {
+        proof = JSON.parse(
+          await decryptMfaSecret(String(body.reauthToken)),
+        ) as Record<string, unknown>;
+      } catch {
+        return jsonError("重新验证已失效，请重新验证当前密码和验证码。", 403);
+      }
+    }
     const recoveryCodes = generateRecoveryCodes();
-    await db.transaction(async (tx) => {
+    const rejected = await db.transaction(async (tx) => {
+      const current = await tx.prepare("SELECT mfa_secret_ciphertext,mfa_pending_secret_ciphertext FROM users WHERE id=? FOR UPDATE").bind(auth.user.id).first();
+      if (!current?.mfa_pending_secret_ciphertext)
+        return jsonError("请先生成双重验证密钥。", 409);
+      if (
+        current.mfa_secret_ciphertext &&
+        (!proof ||
+          proof.userId !== auth.user.id ||
+          proof.currentSecret !== current.mfa_secret_ciphertext ||
+          Number(proof.expiresAt) < Date.now())
+      ) {
+        return jsonError("重新验证已失效，请重新验证当前密码和验证码。", 403);
+      }
+      const secret = await decryptMfaSecret(String(current.mfa_pending_secret_ciphertext));
+      if (!await verifyTotp(secret, String(body.code || "")))
+        return jsonError("验证码不正确，请确认手机时间准确后重试。", 403);
       await tx.prepare("UPDATE users SET mfa_secret_ciphertext=mfa_pending_secret_ciphertext,mfa_pending_secret_ciphertext=NULL,mfa_recovery_hashes=?,mfa_enabled_at=?,updated_at=? WHERE id=?")
         .bind(JSON.stringify(await recoveryCodeHashes(recoveryCodes)), now, now, auth.user.id).run();
       await writeAudit(request, auth.user, { action: "AUTH_MFA_ENABLE", entityType: "USER", entityId: auth.user.id, entityLabel: auth.user.username, summary: "启用双重验证" }, tx);
+      return null;
     });
+    if (rejected) return rejected;
     return NextResponse.json({ ok: true, recoveryCodes });
   }
 

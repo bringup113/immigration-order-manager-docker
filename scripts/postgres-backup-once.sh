@@ -11,6 +11,7 @@ lock_directory="${backup_dir}/.${backup_prefix}-backup.lock"
 temporary_file=""
 list_file=""
 backup_file=""
+lock_acquired=0
 
 log_event() {
   level="$1"
@@ -22,7 +23,7 @@ log_event() {
 cleanup() {
   if [ -n "$temporary_file" ]; then rm -f "$temporary_file"; fi
   if [ -n "$list_file" ]; then rm -f "$list_file"; fi
-  rmdir "$lock_directory" 2>/dev/null || true
+  if [ "$lock_acquired" -eq 1 ]; then rmdir "$lock_directory" 2>/dev/null || true; fi
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -39,6 +40,7 @@ if ! mkdir "$lock_directory" 2>/dev/null; then
   log_event ERROR backup_already_running "已有数据库备份正在执行" >&2
   exit 3
 fi
+lock_acquired=1
 backup_file="${backup_dir}/${backup_prefix}-${timestamp}.dump"
 sequence=1
 while [ -e "$backup_file" ]; do

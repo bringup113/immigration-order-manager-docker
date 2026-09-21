@@ -26,6 +26,14 @@ test("cash values calculate rate from both currency amounts", () => {
   });
 });
 
+test("cash values keep valid large original-currency amounts", () => {
+  assert.deepEqual(calculateCashValues({ amount: "1000000", ratePerUsd: "4000", calculatedField: "baseAmount" }), {
+    amountMinor: 100_000_000,
+    baseAmountMinor: 25_000,
+    rateScaled: 400_000_000_000,
+  });
+});
+
 test("cash values reject missing, zero, and unsafe inputs", () => {
   assert.equal(calculateCashValues({ amount: "", ratePerUsd: "7.5", calculatedField: "baseAmount" }), null);
   assert.equal(calculateCashValues({ amount: "750", baseAmount: "0", calculatedField: "ratePerUsd" }), null);

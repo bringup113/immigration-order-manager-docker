@@ -7,6 +7,8 @@ import { DomainError, textValue } from "@/lib/domain";
 import {
   deleteStoredFile,
   moveStoredFile,
+  rollbackMovedStoredFiles,
+  type MovedStoredFile,
   type QuarantinedStoredFile,
 } from "@/lib/file-storage";
 import {
@@ -81,6 +83,7 @@ async function handlePost(
   user: ChatGPTUser,
   rootDb: AppDatabase = getDatabase(),
   quarantinedFiles: QuarantinedStoredFile[] = [],
+  movedFiles: MovedStoredFile[] = [],
 ) {
   const auth = authorizeApiUser(user, "orders.read");
   if (auth.response) return auth.response;
@@ -284,7 +287,23 @@ async function handlePost(
           actorUserId: mutationAuth.user!.id,
           canOverride: hasPermission(mutationAuth.user!, "orders.override"),
         });
-        return NextResponse.json({ ok: true, check });
+        return NextResponse.json({
+          ok: true,
+          check: {
+            incompleteRequiredSteps: check.incompleteRequiredSteps,
+            missingRequiredMaterials: check.missingRequiredMaterials,
+            openTasks: check.openTasks,
+            openFollowUps: check.openFollowUps,
+            ...(hasPermission(mutationAuth.user!, "finance.read")
+              ? {
+                  receivableBaseMinor: check.receivableBaseMinor,
+                  payableBaseMinor: check.payableBaseMinor,
+                  receivedBaseMinor: check.receivedBaseMinor,
+                  paidBaseMinor: check.paidBaseMinor,
+                }
+              : {}),
+          },
+        });
       }
       if (action === "reopenOrder") {
         await reopenOrder(
@@ -321,6 +340,7 @@ async function handlePost(
           { id, orderNo: String(order.order_no) },
           body,
           mutationAuth.user!.id,
+          movedFiles,
         );
         return NextResponse.json({ ok: true });
       }
@@ -380,6 +400,7 @@ async function handlePost(
           db,
           { id, orderNo: String(order.order_no) },
           body,
+          movedFiles,
         );
         return NextResponse.json({ ok: true });
       }
@@ -457,6 +478,7 @@ export async function POST(request: NextRequest, context: Context) {
   const auth = await requireMutationUser(request);
   if (auth.response) return auth.response;
   const quarantinedFiles: QuarantinedStoredFile[] = [];
+  const movedFiles: MovedStoredFile[] = [];
   const action = textValue(body, "action") || "update";
   const policy = getOrderActionPolicy(action);
   const auditBody = policy.redactRawMrz
@@ -480,6 +502,7 @@ export async function POST(request: NextRequest, context: Context) {
         auth.user,
         db,
         quarantinedFiles,
+        movedFiles,
       );
       if (!result.ok || !auth.user) return result;
       const after = await readOrderActionSnapshot(
@@ -524,11 +547,13 @@ export async function POST(request: NextRequest, context: Context) {
     if (response.ok)
       for (const file of quarantinedFiles)
         await deleteStoredFile(file.quarantinePath).catch(console.error);
-    else
+    else {
+      await rollbackMovedStoredFiles(movedFiles);
       for (const file of quarantinedFiles.reverse())
         await moveStoredFile(file.quarantinePath, file.originalPath).catch(
           () => undefined,
         );
+    }
     if (!response.ok && auth.user)
       await writeAuditBestEffort(request, auth.user, {
         action: actionCode,
@@ -543,6 +568,7 @@ export async function POST(request: NextRequest, context: Context) {
       });
     return response;
   } catch (error) {
+    await rollbackMovedStoredFiles(movedFiles);
     for (const file of quarantinedFiles.reverse())
       await moveStoredFile(file.quarantinePath, file.originalPath).catch(
         () => undefined,

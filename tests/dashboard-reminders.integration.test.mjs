@@ -16,7 +16,7 @@ test("finance reminders follow active allocations in plan currency", {
     await db.query(`
       CREATE TEMP TABLE orders (id text, order_no text, project_name_snapshot text, status text);
       CREATE TEMP TABLE order_applicants (order_id text, name text, applicant_type text, sequence int);
-      CREATE TEMP TABLE order_plans (id text, order_id text, plan_type text, due_date date, name text, planned_amount_minor bigint);
+      CREATE TEMP TABLE order_plans (id text, order_id text, plan_type text, due_date date, name text, planned_amount_minor bigint, planned_base_minor bigint);
       CREATE TEMP TABLE order_cash_entries (order_plan_id text, order_id text, status text, direction text, plan_amount_minor bigint, base_amount_minor bigint);
       INSERT INTO orders VALUES ('o','TEST','Test','ACTIVE');
     `);
@@ -31,7 +31,7 @@ test("finance reminders follow active allocations in plan currency", {
     const visible = async () => (await db.query(query)).rows.map(row => row.title).sort();
     for (const [kind, direction] of [["RECEIVABLE", "RECEIPT"], ["PAYABLE", "PAYMENT"]]) {
       await db.query("TRUNCATE order_plans, order_cash_entries");
-      await db.query("INSERT INTO order_plans VALUES ('p','o',$1,CURRENT_DATE,'plan',10000)", [kind]);
+      await db.query("INSERT INTO order_plans VALUES ('p','o',$1,CURRENT_DATE,'plan',10000,10000)", [kind]);
       assert.deepEqual(await visible(), ["plan"], "unpaid plan is visible");
       await db.query("INSERT INTO order_cash_entries VALUES ('p','o','ACTIVE',$1,4000,90000)", [direction]);
       assert.deepEqual(await visible(), ["plan"], "partial payment stays visible despite a larger base currency amount");
@@ -55,6 +55,17 @@ test("finance reminders follow active allocations in plan currency", {
     assert.deepEqual(await visible(), [], "closed orders stay hidden");
     await db.query("UPDATE orders SET status='PAUSED'");
     assert.deepEqual(await visible(), ["plan"], "overdue unpaid paused orders remain visible");
+    await db.query("TRUNCATE order_plans, order_cash_entries");
+    await db.query("INSERT INTO order_plans VALUES ('p','o','RECEIVABLE',CURRENT_DATE,'fx plan',78400,10000)");
+    await db.query("INSERT INTO order_cash_entries VALUES ('p','o','ACTIVE','RECEIPT',78400,9800)");
+    const outstandingStart = source.indexOf("WITH plans AS MATERIALIZED");
+    const outstandingEnd = source.indexOf("FROM remaining", outstandingStart) + "FROM remaining".length;
+    const outstandingQuery = source.slice(outstandingStart, outstandingEnd)
+      .replaceAll("${orderScope.sql}", "o.id='o'");
+    const outstanding = await db.query(outstandingQuery);
+    assert.equal(Number(outstanding.rows[0].receivable), 0, "a plan paid in full in its own currency has no outstanding balance");
+    await db.query("TRUNCATE order_plans, order_cash_entries");
+    await db.query("INSERT INTO order_plans VALUES ('p','o','RECEIVABLE',CURRENT_DATE,'plan',10000,10000)");
     await db.query(`
       CREATE TEMP TABLE order_steps (order_id text,name text,due_date date,status text);
       CREATE TEMP TABLE order_progress (order_id text,next_action text,title text,follow_up_date date,follow_up_done int);

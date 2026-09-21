@@ -57,6 +57,7 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
      const after=await sql.query('SELECT updated_at FROM order_search_index WHERE order_id=$1',[order.id]);
      assert.equal(String(before.rows[0].updated_at),String(after.rows[0].updated_at));
      const escaped=await get('/api/data/search?q='+encodeURIComponent('%UNMATCHED_'+suffix));assert.equal(escaped.orders.length,0);
+     const separators=await get('/api/data/search?q='+encodeURIComponent('+'));assert.deepEqual({orders:separators.orders,projects:separators.projects,agents:separators.agents},{orders:[],projects:[],agents:[]});
    });
    await t.test('server paging is stable and includes orders beyond the first page',async()=>{
      const first=await get('/api/data/orders?pageSize=1&q='+encodeURIComponent(marker));

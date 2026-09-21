@@ -46,6 +46,7 @@ export default function ProfilePage() {
   const [mfaQrCode, setMfaQrCode] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaPassword, setMfaPassword] = useState("");
+  const [mfaReauthToken, setMfaReauthToken] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [mfaMessage, setMfaMessage] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
@@ -106,8 +107,15 @@ export default function ProfilePage() {
     setMfaMessage("");
     setRecoveryCodes([]);
     try {
-      const data = await postMfa({ action: "begin" });
+      const data = await postMfa({
+        action: "begin",
+        ...(mfaEnabled
+          ? { password: mfaPassword, currentCode: mfaCode }
+          : {}),
+      });
       setMfaSecret(data.secret);
+      setMfaReauthToken(data.reauthToken || "");
+      setMfaPassword("");
       setMfaCode("");
       setMfaQrCode(
         await QRCode.toDataURL(data.otpauth, {
@@ -124,12 +132,17 @@ export default function ProfilePage() {
   async function enableMfa() {
     setMfaMessage("");
     try {
-      const data = await postMfa({ action: "enable", code: mfaCode });
+      const data = await postMfa({
+        action: "enable",
+        code: mfaCode,
+        reauthToken: mfaReauthToken,
+      });
       setMfaEnabled(true);
       setMfaRequired(false);
       setMfaSecret("");
       setMfaQrCode("");
       setMfaCode("");
+      setMfaReauthToken("");
       setRecoveryCodes(data.recoveryCodes || []);
       setMfaMessage(
         "双重验证已启用。恢复码只显示这一次，请保存在电脑端安全位置。",
@@ -277,7 +290,7 @@ export default function ProfilePage() {
               开始设置
             </Button>
           )}
-          {!mfaEnabled && mfaSecret && (
+          {mfaSecret && (
             <div className="mt-6 space-y-4">
               <div className="grid gap-5 rounded-xl border bg-slate-50 p-4 sm:grid-cols-[240px_1fr] sm:items-center">
                 {mfaQrCode ? (
@@ -333,6 +346,7 @@ export default function ProfilePage() {
                   onClick={() => {
                     setMfaSecret("");
                     setMfaQrCode("");
+                    setMfaReauthToken("");
                   }}
                 >
                   取消
@@ -347,7 +361,7 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
-          {mfaEnabled && (
+          {mfaEnabled && !mfaSecret && (
             <div className="mt-6 space-y-4">
               <Field label="当前密码">
                 <Input
@@ -371,6 +385,13 @@ export default function ProfilePage() {
                   onClick={() => void regenerateRecoveryCodes()}
                 >
                   重新生成恢复码
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!mfaPassword || !mfaCode}
+                  onClick={() => void beginMfa()}
+                >
+                  更换验证器
                 </Button>
                 <Button
                   variant="outline"

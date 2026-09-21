@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { access, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import pg from "pg";
 
@@ -7,6 +9,7 @@ const baseUrl = process.env.MIGRA_BASE_URL;
 const databaseUrl = process.env.MIGRA_DATABASE_URL;
 const username = process.env.MIGRA_TEST_USERNAME;
 const password = process.env.MIGRA_TEST_PASSWORD;
+const uploadRoot = process.env.MIGRA_TEST_UPLOAD_ROOT;
 const enabled = Boolean(baseUrl && databaseUrl && username && password);
 
 async function login() {
@@ -35,6 +38,8 @@ test(
     const stepTemplateId = `step_${tag}`;
     const planTemplateId = `plan_${tag}`;
     const orderIds = [];
+    const rollbackDirectory = uploadRoot ? join(uploadRoot, `rollback-${tag}`) : "";
+    const triggerName = `audit_fail_${tag}`;
 
     async function post(path, body) {
       const response = await fetch(`${baseUrl}${path}`, {
@@ -214,6 +219,56 @@ test(
         400,
       );
 
+      if (uploadRoot) {
+        const material = await db.query(
+          "SELECT id FROM order_materials WHERE order_id=$1 AND applicant_id=$2 ORDER BY sequence LIMIT 1",
+          [minimalOrder.id, people[0].id],
+        );
+        const fileId = `rollback_file_${tag}`;
+        const originalRelativePath = `rollback-${tag}/original.jpg`;
+        const originalPath = join(uploadRoot, originalRelativePath);
+        await mkdir(dirname(originalPath), { recursive: true });
+        await writeFile(originalPath, "rollback fixture");
+        await db.query(`INSERT INTO material_files
+          (id,order_id,material_id,original_name,stored_name,relative_path,mime_type,size_bytes,uploaded_at,sha256)
+          VALUES($1,$2,$3,'original.jpg','original.jpg',$4,'image/jpeg',16,now(),$5)`,
+          [fileId, minimalOrder.id, material.rows[0].id, originalRelativePath, "0".repeat(64)],
+        );
+        await db.query(`CREATE FUNCTION ${triggerName}() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF position('ROLLBACK_${tag}' in COALESCE(NEW.changes_json,'')) > 0 THEN
+              RAISE EXCEPTION 'injected audit failure';
+            END IF;
+            RETURN NEW;
+          END $$`);
+        await db.query(`CREATE TRIGGER ${triggerName} BEFORE INSERT ON audit_logs
+          FOR EACH ROW EXECUTE FUNCTION ${triggerName}()`);
+        const rejected = await change({
+          action: "updateApplicant",
+          applicantId: people[0].id,
+          name: `ROLLBACK_${tag}`,
+        });
+        assert.equal(rejected.status, 500, await rejected.clone().text());
+        const persisted = await db.query(
+          "SELECT relative_path FROM material_files WHERE id=$1",
+          [fileId],
+        );
+        assert.equal(persisted.rows[0].relative_path, originalRelativePath);
+        await access(originalPath);
+        assert.deepEqual(
+          (await readdir(rollbackDirectory, { recursive: true })).filter((name) => name.endsWith(".jpg")),
+          ["original.jpg"],
+        );
+        assert.equal(
+          (await readdir(uploadRoot, { recursive: true })).some((name) =>
+            name.split("/").at(-1)?.includes(fileId.slice(-8)) && name.endsWith(".jpg"),
+          ),
+          false,
+        );
+        await db.query(`DROP TRIGGER ${triggerName} ON audit_logs`);
+        await db.query(`DROP FUNCTION ${triggerName}()`);
+      }
+
       const userId = (
         await db.query("SELECT id FROM users WHERE username=$1", [username])
       ).rows[0].id;
@@ -255,11 +310,14 @@ test(
       ).rows[0].last_seen_at;
       assert.notEqual(afterBusinessRequest, before);
     } finally {
+      await db.query(`DROP TRIGGER IF EXISTS ${triggerName} ON audit_logs`).catch(() => undefined);
+      await db.query(`DROP FUNCTION IF EXISTS ${triggerName}()`).catch(() => undefined);
       for (const orderId of orderIds) {
         await db.query("DELETE FROM orders WHERE id=$1", [orderId]);
       }
       await db.query("DELETE FROM projects WHERE id=$1", [projectId]);
       await db.query("DELETE FROM agents WHERE id=$1", [agentId]);
+      if (rollbackDirectory) await rm(rollbackDirectory, { recursive: true, force: true });
       await db.end();
     }
   },

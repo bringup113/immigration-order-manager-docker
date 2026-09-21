@@ -21,9 +21,9 @@ function positiveRate(value: unknown) {
   return Number.isFinite(number) && number > 0 && Number.isSafeInteger(scaled) ? scaled : null;
 }
 
-function roundedRatio(numerator: number, denominator: number) {
-  if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || numerator <= 0 || denominator <= 0) return null;
-  const value = (BigInt(numerator) + BigInt(Math.floor(denominator / 2))) / BigInt(denominator);
+function roundedRatio(numerator: bigint, denominator: bigint) {
+  if (numerator <= BigInt(0) || denominator <= BigInt(0)) return null;
+  const value = (numerator + denominator / BigInt(2)) / denominator;
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
@@ -35,13 +35,22 @@ export function calculateCashValues(inputs: CashInputs) {
 
   if (inputs.calculatedField === "baseAmount") {
     if (!amountMinor || !rateScaled) return null;
-    baseAmountMinor = roundedRatio(amountMinor * CASH_RATE_SCALE, rateScaled);
+    baseAmountMinor = roundedRatio(
+      BigInt(amountMinor) * BigInt(CASH_RATE_SCALE),
+      BigInt(rateScaled),
+    );
   } else if (inputs.calculatedField === "amount") {
     if (!baseAmountMinor || !rateScaled) return null;
-    amountMinor = roundedRatio(baseAmountMinor * rateScaled, CASH_RATE_SCALE);
+    amountMinor = roundedRatio(
+      BigInt(baseAmountMinor) * BigInt(rateScaled),
+      BigInt(CASH_RATE_SCALE),
+    );
   } else {
     if (!amountMinor || !baseAmountMinor) return null;
-    rateScaled = roundedRatio(amountMinor * CASH_RATE_SCALE, baseAmountMinor);
+    rateScaled = roundedRatio(
+      BigInt(amountMinor) * BigInt(CASH_RATE_SCALE),
+      BigInt(baseAmountMinor),
+    );
   }
 
   if (!amountMinor || !baseAmountMinor || !rateScaled) return null;

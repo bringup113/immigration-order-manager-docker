@@ -304,6 +304,17 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     assert.equal(dashboard.activeOrders, 1);
     assert.equal(dashboard.balanceMinor, 12345);
     assert.equal(dashboard.reminders.some((item) => item.reminder_type === "TASK" && item.title === `催材料并复核 ${suffix}`), true);
+    await database.query("DELETE FROM role_permissions WHERE role_id=$1 AND permission='finance.read'", [roleId]);
+    detail = await getJson(`/api/orders/${encodeURIComponent(ownOrderNo)}`, ownCookie);
+    const closed = await taskPost({
+      action: "closeOrder",
+      closedOn: new Date().toISOString().slice(0, 10),
+      closureResult: "权限边界回归",
+      expectedVersion: detail.order.version,
+    });
+    const closedBody = await closed.json();
+    assert.equal(Object.hasOwn(closedBody.check, "receivableBaseMinor"), false);
+    assert.equal(Object.hasOwn(closedBody.check, "receivedBaseMinor"), false);
     const audits = await database.query("SELECT action,changes_json FROM audit_logs WHERE actor_user_id=$1 OR (entity_type='ORDER' AND entity_id=$2)", [userId, otherOrderNo]);
     for (const action of ["TASK_CREATE", "TASK_UPDATE", "TASK_COMPLETE", "TASK_REOPEN", "TASK_DELETE"]) assert.equal(audits.rows.some((row) => row.action === action), true, `${action} audit missing`);
     const ownerAudit = audits.rows.filter((row) => row.action === "ORDER_ASSIGNOWNER");

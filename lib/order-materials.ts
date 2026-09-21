@@ -4,6 +4,8 @@ import { DomainError, textValue, type JsonRecord } from "@/lib/domain";
 import {
   moveStoredFile,
   quarantineStoredFile,
+  rollbackMovedStoredFiles,
+  type MovedStoredFile,
   type QuarantinedStoredFile,
 } from "@/lib/file-storage";
 import {
@@ -21,6 +23,7 @@ export async function saveOrderMaterial(
   db: AppDatabase,
   order: OrderMaterialContext,
   body: JsonRecord,
+  movedFiles: MovedStoredFile[] = [],
 ) {
   const action = textValue(body, "action");
   if (!["addMaterial", "updateMaterial"].includes(action))
@@ -82,7 +85,7 @@ export async function saveOrderMaterial(
       )
       .bind(materialId)
       .all();
-    const moved: { from: string; to: string }[] = [];
+    const movedStart = movedFiles.length;
     const fileUpdates = [];
     try {
       for (const file of files.results) {
@@ -103,7 +106,7 @@ export async function saveOrderMaterial(
         const sourcePath = String(file.relative_path);
         if (sourcePath !== destination.relativePath) {
           await moveStoredFile(sourcePath, destination.relativePath);
-          moved.push({ from: sourcePath, to: destination.relativePath });
+          movedFiles.push({ from: sourcePath, to: destination.relativePath });
         }
         fileUpdates.push(
           db
@@ -137,13 +140,7 @@ export async function saveOrderMaterial(
           .bind(now, order.id),
       ]);
     } catch (error) {
-      for (const file of moved.reverse()) {
-        try {
-          await moveStoredFile(file.to, file.from);
-        } catch {
-          // Preserve the original failure while attempting best-effort rollback.
-        }
-      }
+      await rollbackMovedStoredFiles(movedFiles, movedStart);
       throw error;
     }
     return;

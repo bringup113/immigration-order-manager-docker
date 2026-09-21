@@ -4,6 +4,8 @@ import { DomainError, textValue, type JsonRecord } from "@/lib/domain";
 import {
   moveStoredFile,
   quarantineStoredFile,
+  rollbackMovedStoredFiles,
+  type MovedStoredFile,
   type QuarantinedStoredFile,
 } from "@/lib/file-storage";
 import {
@@ -22,6 +24,7 @@ export async function updateOrderApplicant(
   order: OrderApplicantContext,
   body: JsonRecord,
   actorUserId: string,
+  movedFiles: MovedStoredFile[] = [],
 ) {
   const applicantId = textValue(body, "applicantId");
   const name = textValue(body, "name");
@@ -55,7 +58,7 @@ export async function updateOrderApplicant(
     )
     .bind(applicantId)
     .all();
-  const moved: { from: string; to: string }[] = [];
+  const movedStart = movedFiles.length;
   const fileUpdates = [];
   try {
     for (const file of files.results) {
@@ -71,7 +74,7 @@ export async function updateOrderApplicant(
       const sourcePath = String(file.relative_path);
       if (sourcePath !== destination.relativePath) {
         await moveStoredFile(sourcePath, destination.relativePath);
-        moved.push({ from: sourcePath, to: destination.relativePath });
+        movedFiles.push({ from: sourcePath, to: destination.relativePath });
       }
       fileUpdates.push(
         db
@@ -145,13 +148,7 @@ export async function updateOrderApplicant(
         .bind(now, order.id),
     ]);
   } catch (error) {
-    for (const file of moved.reverse()) {
-      try {
-        await moveStoredFile(file.to, file.from);
-      } catch {
-        // Preserve the original failure while attempting best-effort rollback.
-      }
-    }
+    await rollbackMovedStoredFiles(movedFiles, movedStart);
     throw error;
   }
 }

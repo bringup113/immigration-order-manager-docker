@@ -4,14 +4,32 @@ import { writeAudit, writeAuditBestEffort } from "@/lib/audit";
 import { jsonError, requireApiUser, requireMutationUser } from "@/lib/api-auth";
 import { hashPassword, normalizeUsername, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validPasswordLength, type AppUser } from "@/lib/docker-auth";
 import { FIELD_LIMITS, validateTextFields } from "@/lib/validation";
+import type { AppDatabase } from "@/db/driver";
 
-async function roleCanBeAssignedBy(actor: AppUser, role: Record<string, unknown>) {
+async function roleCanBeAssignedBy(
+  db: AppDatabase,
+  actor: AppUser,
+  role: Record<string, unknown>,
+) {
   const code = String(role.code);
   if (actor.roleCode === "OWNER") return true;
   if (code === "OWNER" || code === "ADMIN") return false;
   if (actor.orderScope !== "ALL" && String(role.order_scope) === "ALL") return false;
-  const permissions = await getDatabase().prepare("SELECT permission FROM role_permissions WHERE role_id=?").bind(role.id).all<{ permission: string }>();
+  const permissions = await db.prepare("SELECT permission FROM role_permissions WHERE role_id=?").bind(role.id).all<{ permission: string }>();
   return permissions.results.every((item) => actor.permissions.includes("*") || actor.permissions.includes(item.permission));
+}
+
+async function userCanBeManagedBy(
+  db: AppDatabase,
+  actor: AppUser,
+  target: Record<string, unknown>,
+) {
+  if (actor.roleCode === "OWNER") return true;
+  return roleCanBeAssignedBy(db, actor, {
+    id: target.role_id,
+    code: target.role_code,
+    order_scope: target.order_scope,
+  });
 }
 
 export async function GET() {
@@ -45,7 +63,7 @@ export async function POST(request: NextRequest) {
       const roleId = String(body.roleId || "");
       if (!/^[A-Za-z0-9._-]{3,40}$/.test(username) || !displayName || !validPasswordLength(password)) return jsonError(`用户名需为 3–40 位字母、数字或 ._-，密码需要 ${PASSWORD_MIN_LENGTH}–${PASSWORD_MAX_LENGTH} 位。`);
       const role = await db.prepare("SELECT id,code,name,order_scope FROM roles WHERE id=? AND active=1").bind(roleId).first();
-      if (!role || !await roleCanBeAssignedBy(auth.user, role)) return jsonError("不能分配高于当前账号权限的角色。", 403);
+      if (!role || !await roleCanBeAssignedBy(db, auth.user, role)) return jsonError("不能分配高于当前账号权限的角色。", 403);
       const id = newId("usr");
       await db.prepare(`INSERT INTO users
         (id,username,username_normalized,display_name,password_hash,role_id,active,must_change_password,failed_attempts,created_at,updated_at)
@@ -55,10 +73,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ id }, { status: 201 });
     }
     const userId = String(body.userId || "");
-    const target = await db.prepare(`SELECT u.*,r.code AS role_code,r.name AS role_name FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=?`).bind(userId).first();
+    const target = await db.prepare(`SELECT u.*,r.code AS role_code,r.name AS role_name,r.order_scope FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=?`).bind(userId).first();
     if (!target) return jsonError("用户不存在。", 404);
-    if (String(target.role_code) === "OWNER" && auth.user.roleCode !== "OWNER") return jsonError("只有系统所有者可以管理所有者账号。", 403);
-    if (auth.user.roleCode !== "OWNER" && String(target.role_code) === "ADMIN") return jsonError("管理员不能管理其他管理员。", 403);
+    if (!await userCanBeManagedBy(db, auth.user, target)) return jsonError("不能管理权限或数据范围高于当前账号的用户。", 403);
     if (action === "update") {
       const username = String(body.username || "").trim();
       const displayName = String(body.displayName || "").trim();
@@ -66,7 +83,7 @@ export async function POST(request: NextRequest) {
       const role = await db.prepare("SELECT id,code,name,order_scope FROM roles WHERE id=? AND active=1").bind(roleId).first();
       if (!/^[A-Za-z0-9._-]{3,40}$/.test(username)) return jsonError("用户名需为 3–40 位字母、数字或 ._-。");
       if (!displayName || !role) return jsonError("姓名或角色不正确。");
-      if (!await roleCanBeAssignedBy(auth.user, role)) return jsonError("不能分配高于当前账号权限的角色。", 403);
+      if (!await roleCanBeAssignedBy(db, auth.user, role)) return jsonError("不能分配高于当前账号权限的角色。", 403);
       if (String(target.role_code) === "OWNER" && String(role.code) !== "OWNER") {
         const owners = await db.prepare("SELECT COUNT(*) AS value FROM users WHERE role_id='role_owner' AND active=1").first();
         if (Number(owners?.value || 0) <= 1) return jsonError("请先指定另一名系统所有者，再调整当前所有者角色。", 409);

@@ -15,7 +15,7 @@ MIGRA 用于跟踪移民订单的代理来源、申请人、项目模板、办�
 - 全局搜索：支持订单、代理、申请人、护照、项目、流程、跟进、收付款金额、材料和文件名；中文名称支持全拼和首字母，使用 `+` 组合条件。
 - MRZ 识别：图片通过主应用调用独立的 Docsaid `two_stage`/CPU sidecar，默认关闭中心裁切和后处理，每张图片只执行一次推理；识别服务单 worker 顺序排队，临时文件处理完成后立即删除。PDF 仍由浏览器内 PDF.js 逐页临时渲染为图片再提交识别。识别结果只用于辅助录入和校验，不代表护照真伪验证。
 - 多用户：内置系统所有者、管理员和只读用户，也可创建自定义角色；用户名和显示姓名均可修改，当前会话不会因改名中断。
-- 双重验证：支持标准 TOTP 动态码、扫码设置、加密密钥和一次性恢复码；公网模式会强制系统所有者启用。
+- 双重验证：支持标准 TOTP 动态码、扫码设置、加密密钥和一次性恢复码；恢复码在数据库事务内一次性消费，更换验证器必须先验证当前密码和原验证器；公网模式会强制系统所有者启用。
 - 会话安全：默认空闲 60 分钟、绝对 12 小时失效；个人安全页可查看设备、退出单个设备或退出其他所有设备。
 - 文件权限：只读用户可以预览文件，但不能上传、修改、删除或下载。
 - 操作日志：记录登录退出、用户与角色管理、业务修改及文件访问；支持按用户、模块、操作、结果和日期筛选，密码、会话令牌和护照号会脱敏。
@@ -92,7 +92,7 @@ MRZ 的当前参数、验证边界、运行检查和故障排查见 [MRZ 服务�
 - PostgreSQL owner、migrator、runtime 和 backup 密码只保存在权限为 `0600`、且被 Git 忽略的 `.env` 中。Web 应用不使用 owner 或 migrator。
 - `APP_AUTH_SECRET`（未显式配置时为 `data/.auth-secret`）用于加密双重验证密钥。它不属于上传文件，但启用双重验证后必须单独保存在密码管理器中；迁移服务器时需与数据库配套恢复。
 
-系统默认每天自动备份一次 PostgreSQL，保留 30 天，可通过 `.env` 的 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS` 调整。备份统一为 `pg_dump -Fc` custom 格式，写入临时文件并通过最小大小和 `pg_restore --list` 校验后才改为正式 `.dump` 文件。失败原因会明确写入备份容器日志。也可以手动生成：
+系统默认每天自动备份一次 PostgreSQL，保留 30 天，可通过 `.env` 的 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS` 调整。备份统一为 `pg_dump -Fc` custom 格式，写入临时文件并通过最小大小和 `pg_restore --list` 校验后才改为正式 `.dump` 文件。自动备份、手动备份和正式恢复共用同一把跨进程锁，恢复使用单事务，避免备份与恢复并发或留下部分恢复状态。失败原因会明确写入备份容器日志。也可以手动生成：
 
 ```bash
 ./scripts/backup-postgres.sh
@@ -111,6 +111,8 @@ MRZ 的当前参数、验证边界、运行检查和故障排查见 [MRZ 服务�
 ```bash
 CONFIRM_RESTORE=YES ./scripts/restore-postgres.sh backups/postgres/migra-YYYYMMDD-HHMMSS.dump
 ```
+
+数据库恢复或后续迁移失败时，应用保持停止，管理员应先检查日志并处理失败原因；只有数据库和迁移成功后才重新启动应用。附件一致性异常不回滚已经恢复的数据库，应用会重新启动，同时脚本以非零状态退出并保留检查报告供人工处理。
 
 ## NAS 内网与 Lucky 公网同时使用
 
@@ -207,6 +209,7 @@ CI 在隔离 Docker 环境中使用固定版本 Playwright Chromium。`npm run t
 ## 维护文档
 
 - [当前状态与后续工作](docs/IMPLEMENTATION_PLAN.md)
+- [手机端与 PWA 开发计划（含效果图，待实施）](docs/MOBILE_PWA_DEVELOPMENT_PLAN.md)
 - [开发规范](docs/DEVELOPMENT.md)
 - [当前源码审阅与验证](docs/CODE_QUALITY.md)
 - [MRZ 服务说明](docs/MRZ_SIDECAR_POC_2026-09-14.md)

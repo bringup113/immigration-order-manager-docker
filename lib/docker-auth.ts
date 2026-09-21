@@ -206,12 +206,16 @@ export async function verifyUserMfa(userId: string, secretCiphertext: string, re
   const normalized = code.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   if (!normalized) return false;
   const suppliedHash = await digest(`mfa-recovery:${normalized}`);
-  const hashes = JSON.parse(recoveryHashesText || "[]") as string[];
-  const index = hashes.findIndex((hash) => constantTimeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(suppliedHash)));
-  if (index < 0) return false;
-  hashes.splice(index, 1);
-  await getDatabase().prepare("UPDATE users SET mfa_recovery_hashes=?,updated_at=? WHERE id=?").bind(JSON.stringify(hashes), nowIso(), userId).run();
-  return true;
+  void recoveryHashesText;
+  return getDatabase().transaction(async (db) => {
+    const row = await db.prepare("SELECT mfa_recovery_hashes FROM users WHERE id=? FOR UPDATE").bind(userId).first();
+    const hashes = JSON.parse(String(row?.mfa_recovery_hashes || "[]")) as string[];
+    const index = hashes.findIndex((hash) => constantTimeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(suppliedHash)));
+    if (index < 0) return false;
+    hashes.splice(index, 1);
+    await db.prepare("UPDATE users SET mfa_recovery_hashes=?,updated_at=? WHERE id=?").bind(JSON.stringify(hashes), nowIso(), userId).run();
+    return true;
+  });
 }
 
 export async function dockerOwnerSetupRequired() {

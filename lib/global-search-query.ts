@@ -59,6 +59,9 @@ export async function readGlobalSearch(
   const canReadMaterials = hasPermission(user, "materials.read");
   const canReadTasks = hasPermission(user, "tasks.read");
   const patterns = terms.map(likePattern);
+  const entityMatch = terms.length
+    ? terms.map(() => "i.search_blob LIKE ?").join(" AND ")
+    : "FALSE";
   const [orders, projectRows, agentRows] = await Promise.all([
     searchOrders(query, {
       finance: canReadFinance,
@@ -71,7 +74,7 @@ export async function readGlobalSearch(
           .prepare(
             `SELECT p.id,p.code,p.name,p.country FROM projects p
       JOIN entity_search_index i ON i.entity_type='project' AND i.entity_id=p.id
-      WHERE ${terms.map(() => "i.search_blob LIKE ?").join(" AND ")} AND ${canReadAllOrders ? "TRUE" : `EXISTS (SELECT 1 FROM orders o WHERE o.project_id=p.id AND ${orderScope.sql})`}
+      WHERE ${entityMatch} AND ${canReadAllOrders ? "TRUE" : `EXISTS (SELECT 1 FROM orders o WHERE o.project_id=p.id AND ${orderScope.sql})`}
       ORDER BY p.updated_at DESC LIMIT 8`,
           )
           .bind(...patterns, ...(canReadAllOrders ? [] : orderScope.values))
@@ -82,7 +85,7 @@ export async function readGlobalSearch(
           .prepare(
             `SELECT c.id,c.name,c.contact_name,c.phone FROM agents c
       JOIN entity_search_index i ON i.entity_type='agent' AND i.entity_id=c.id
-      WHERE ${terms.map(() => "i.search_blob LIKE ?").join(" AND ")} AND ${canReadAllOrders ? "TRUE" : `EXISTS (SELECT 1 FROM orders o WHERE o.agent_id=c.id AND ${orderScope.sql})`}
+      WHERE ${entityMatch} AND ${canReadAllOrders ? "TRUE" : `EXISTS (SELECT 1 FROM orders o WHERE o.agent_id=c.id AND ${orderScope.sql})`}
       ORDER BY c.updated_at DESC LIMIT 8`,
           )
           .bind(...patterns, ...(canReadAllOrders ? [] : orderScope.values))
