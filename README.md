@@ -121,7 +121,7 @@ NAS 上由 Lucky 终止 HTTPS 并反向代理时，使用 `docker-compose.nas.ym
 ```dotenv
 NAS_BIND_ADDRESS=192.168.3.13
 APP_PORT=3000
-APP_ORIGIN=你的正式域名
+APP_ORIGIN=https://你的正式域名
 PUBLIC_DEPLOYMENT=1
 REQUIRE_PRIVILEGED_MFA=1
 ```
@@ -132,7 +132,7 @@ REQUIRE_PRIVILEGED_MFA=1
 - `PUBLIC_DEPLOYMENT=1` 启用公网安全策略。当前只强制系统所有者启用双重验证；管理员、只读用户和自定义角色可按需启用。`REQUIRE_PRIVILEGED_MFA` 是为兼容既有配置保留的变量名。
 - 内网地址和公网域名属于两个浏览器站点，会分别保存登录 Cookie，因此第一次切换地址时需要重新登录。
 
-Lucky 的 Web 服务应把前端 `https://order.tcvisa.vip:8888` 反向代理到后端 `http://192.168.3.13:3000`，并传递原始 Host、`X-Forwarded-Host` 和 `X-Forwarded-Proto: https`。修改域名、外网端口或 NAS IP 时，必须同时更新 Lucky 与 `.env` 中对应的值。
+Lucky 的 Web 服务应把前端 `https://你的正式域名` 反向代理到后端 `http://192.168.3.13:3000`，并传递原始 Host、`X-Forwarded-Host` 和 `X-Forwarded-Proto: https`。修改域名、外网端口或 NAS IP 时，必须同时更新 Lucky 与 `.env` 中对应的值。
 
 部署及以后覆盖更新都使用同一组 Compose 文件：
 
