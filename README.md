@@ -121,7 +121,7 @@ NAS 上由 Lucky 终止 HTTPS 并反向代理时，使用 `docker-compose.nas.ym
 ```dotenv
 NAS_BIND_ADDRESS=192.168.3.13
 APP_PORT=3000
-APP_ORIGIN=https://order.tcvisa.vip:8888
+APP_ORIGIN=你的正式域名
 PUBLIC_DEPLOYMENT=1
 REQUIRE_PRIVILEGED_MFA=1
 ```
