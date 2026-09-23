@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前维护目录为 `immigration-order-manager-docker`；`package.json` 版本为 `1.0.2`，移动工作台功能基线提交为 [`5edd090`](https://github.com/bringup113/immigration-order-manager-docker/commit/5edd0901db7851a54ea2507460d8d88febf71508)。`v1.0.2` 标签仍指向此前稳定基线，不代表移动工作台源码。
+- 当前维护目录为 `immigration-order-manager-docker`；`package.json` 版本为 `1.0.3`，移动工作台功能基线提交为 [`5edd090`](https://github.com/bringup113/immigration-order-manager-docker/commit/5edd0901db7851a54ea2507460d8d88febf71508)。`v1.0.2` 标签保留此前稳定基线；移动工作台随 `v1.0.3` 发布。
 - 主应用、PostgreSQL、自动备份、一次性迁移容器和 Docsaid MRZ sidecar 已纳入同一套 Docker Compose。
 - 当前数据库结构包含 25 个顺序迁移；全新隔离数据库已使用当前源码完成 25/25 迁移。
 - 申请人支持分阶段录入；新订单模板日期、订单排序、首页提醒、MRZ 流式传输和 NAS 内外网访问均已进入当前源码。

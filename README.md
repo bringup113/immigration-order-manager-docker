@@ -2,7 +2,7 @@
 
 MIGRA 帮助小团队从签约到结案管理移民订单：项目模板、申请人、办理流程、材料、订单收付款、提醒和查询都围绕同一张订单展开。电脑端用于完整办公；手机端是可添加到桌面的移动工作台，方便外出时查看进度和处理简短事项。
 
-> 当前主线：`main`。`package.json` 版本为 `1.0.2`；最近一次源码提交见 [GitHub 提交记录](https://github.com/bringup113/immigration-order-manager-docker/commits/main)。部署前请以实际检出的提交、[当前状态](docs/IMPLEMENTATION_PLAN.md)和 CI 结果为准。
+> 当前主线：`main`，发布版本为 `v1.0.3`。最近一次源码提交见 [GitHub 提交记录](https://github.com/bringup113/immigration-order-manager-docker/commits/main)。部署前请以实际检出的提交、[当前状态](docs/IMPLEMENTATION_PLAN.md)和 CI 结果为准。
 
 ## 先看系统怎么工作
 
