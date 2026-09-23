@@ -1,10 +1,19 @@
 # NAS 内网与 Lucky 公网访问配置
 
-本项目支持同一套 NAS 容器同时从内网 IP 和 Lucky 公网域名访问：
+本项目支持同一套 NAS 容器同时从内网 IP 和 Lucky 公网域名访问。下面的 IP、域名和端口是当前环境的示例，迁移到另一台 NAS 时应替换成新环境的实际值：
 
 - 内网：`http://192.168.3.13:3000`
 - 公网：`https://order.tcvisa.vip:8888`
 - Lucky 后端：`http://192.168.3.13:3000`
+
+```mermaid
+flowchart LR
+  A[内网浏览器] -->|内网 HTTP| M[MIGRA 应用]
+  B[外网浏览器] -->|公网 HTTPS| L[Lucky]
+  L -->|内网 HTTP| M
+  M --> D[(PostgreSQL)]
+  M --> R[MRZ sidecar]
+```
 
 ## `.env` 怎么填写
 
@@ -66,6 +75,7 @@ Web 服务保持以下关系：
 | 后端地址 | `http://192.168.3.13:3000` |
 | HTTP 跳转 | 跳转到同一域名的 HTTPS 8888 |
 | 原始 Host | 传递给后端 |
+| `X-Forwarded-Host` | 传递外部请求的原始主机名与端口 |
 | `X-Forwarded-Proto` | `https` |
 
 Lucky 负责公网 TLS 证书，主应用容器继续使用内网 HTTP。PostgreSQL 和 MRZ 服务不应暴露给公网。

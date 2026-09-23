@@ -1,12 +1,12 @@
 # 当前源码审阅与验证
 
-更新日期：2026-09-23。本文只记录当前源码的结构、已知边界和可重复验证结果，不累计旧版本调试流水账。
+更新日期：2026-09-24。本文只记录当前源码的结构、已知边界和可重复验证结果，不累计旧版本调试流水账。
 
 ## 结论
 
-当前代码可以继续作为主线维护，不需要推倒重写。移动工作台 M0～M5 已进入源码，本地生产构建、类型检查、静态检查、隔离接口、真实浏览器、部署权限及成套恢复回归均通过，并已部署到目标 NAS 完成自动化上线验收。
+当前代码可以继续作为主线维护。移动工作台 M0～M5 已进入 [`5edd090` 主线提交](https://github.com/bringup113/immigration-order-manager-docker/commit/5edd0901db7851a54ea2507460d8d88febf71508)，本地生产构建、类型检查、静态检查、隔离接口、真实浏览器、部署权限及成套恢复回归均通过；该提交的 [GitHub Actions](https://github.com/bringup113/immigration-order-manager-docker/actions/runs/35902230812) 也已通过。目标 NAS 已完成自动化上线验收。
 
-本轮修复 MFA 更换与恢复码并发、跨自定义角色管理、备份锁、失败恢复、附件移动回滚、大额换算、汇率差额提醒、纯 `+` 搜索和结案响应权限边界，并恢复 7 个 Shell 运维脚本的可执行权限。对应回归已进入既有测试入口。
+该功能基线包含手机四入口、四模块订单详情、材料与收支操作、PWA 和安全页；桌面与手机复用排序、搜索、权限和订单业务规则。此前的 MFA、备份锁、失败恢复、附件事务、大额换算及结案响应修复仍在主线，对应回归保留在既有测试入口。
 
 ## 当前代码边界
 
@@ -20,7 +20,7 @@
 - 主应用不依赖 MRZ 健康状态启动；识别服务故障只影响识别接口。
 - 运行状态轮询验证会话和权限，但不刷新用户活动时间，避免后台页面无限延长空闲会话。
 
-## 2026-09-23 当前源码验证
+## 2026-09-24 当前源码验证
 
 验证使用当前工作区源码构建 Node.js 24 Docker 检查镜像，并使用独立数据库和独立应用容器执行接口测试。业务数据库和业务附件未被测试写入。
 
@@ -43,6 +43,7 @@
 | 公网 PWA 资源 | 通过 | 正式 HTTPS 下 manifest 与 Service Worker 返回 200；`/m` 保留移动返回路径进入登录页；Service Worker 限定 `/m` 且禁止缓存 |
 | NAS 基础性能 | 通过 | 登录页 20 次请求平均 4.4ms、P95 4.8ms；应用约 97MiB，MRZ CPU 模式约 693MiB，1.5GiB 限额内健康 |
 | Shell 语法与补丁格式 | 通过 | `sh -n` 与 `git diff --check` |
+| GitHub Actions | 通过 | [`5edd090` 的 verify 与发布工作流](https://github.com/bringup113/immigration-order-manager-docker/actions/runs/35902230812) 完成 |
 
 MRZ 传输测试使用受控假 sidecar，只验证主应用上传、转发、限流和清理边界。目标 NAS 已验证 MRZ 服务以 CPU 模式健康运行，但没有用脱敏图片／PDF 重测 Docsaid 模型准确率和识别耗时。真实 iPhone／Android 的视觉、安装、摄像头和文件选择器体验仍需人工验收。
 
@@ -65,6 +66,7 @@ npm run test:mrz-transfer
 # 需要 Playwright Chromium、隔离应用和临时测试账号
 npm run test:browser
 npm run test:browser:current
+npm run test:browser:mobile:real
 ```
 
 `test:integration` 现在要求 `MIGRA_BASE_URL`、`MIGRA_DATABASE_URL`、`MIGRA_TEST_USERNAME` 和 `MIGRA_TEST_PASSWORD`，缺少时直接失败，不能以跳过代表通过。提醒和排序测试默认复用 `MIGRA_DATABASE_URL`，并只创建连接级临时表。

@@ -1,17 +1,18 @@
 # MIGRA 当前状态与后续工作
 
-更新日期：2026-09-23。本文只保留当前源码状态、固定产品决策和下一步工作。
+更新日期：2026-09-24。本文只保留当前源码状态、固定产品决策和下一步工作。
 
 ## 当前状态
 
-- 当前维护目录为 `immigration-order-manager-docker`，包版本和 Git 稳定基线均为 `v1.0.2`。
+- 当前维护目录为 `immigration-order-manager-docker`；`package.json` 版本为 `1.0.2`，移动工作台功能基线提交为 [`5edd090`](https://github.com/bringup113/immigration-order-manager-docker/commit/5edd0901db7851a54ea2507460d8d88febf71508)。`v1.0.2` 标签仍指向此前稳定基线，不代表移动工作台源码。
 - 主应用、PostgreSQL、自动备份、一次性迁移容器和 Docsaid MRZ sidecar 已纳入同一套 Docker Compose。
 - 当前数据库结构包含 25 个顺序迁移；全新隔离数据库已使用当前源码完成 25/25 迁移。
 - 申请人支持分阶段录入；新订单模板日期、订单排序、首页提醒、MRZ 流式传输和 NAS 内外网访问均已进入当前源码。
-- 当前源码已通过生产构建、ESLint、52 项单元/策略测试、13 项备份与附件脚本测试、3 项 Docker 目录准备测试、33 项标准集成回归及 3 项会话与权限安全回归。
-- 搜索自动刷新、首页提醒跳转、订单服务端排序、新订单日期联动和仅姓名申请人建单已通过隔离 Playwright 浏览器回归。
+- 当前源码已通过本地生产构建、ESLint、54 项单元/策略测试、13 项备份与附件脚本测试、3 项 Docker 目录准备测试、33 项隔离集成回归及 3 项会话与权限安全回归。
+- 桌面搜索自动刷新、提醒跳转、订单排序、新订单日期联动与仅姓名建单，以及手机深链、四入口、四模块详情、流程、跟进、收付款、材料和 PWA 缓存边界已通过隔离浏览器回归。
 - MFA、权限层级、备份恢复、附件事务、大额金额、计划结清提醒、纯分隔符搜索和结案响应边界修复已进入当前基线。
 - 当前源码已部署到目标 NAS；数据库迁移、原有数据数量、容器权限、内外网 PWA 公共资源及公网登录返回路径均已验收。历史性能报告仍只保留为旧环境参考。
+- 手机端在 `/m` 使用工作台、订单、搜索、我的四个入口；订单详情默认进入办理与跟进，没有独立订单概览。完整建单和后台管理仍在桌面端。
 
 ## 固定产品决策
 
@@ -36,22 +37,23 @@
 | 项目包 | `lib/project-package.ts` |
 | 申请人与 MRZ | `lib/passport-mrz.ts`、`app/api/mrz/scan/`、`mrz-sidecar/` |
 | 搜索与提醒 | `lib/order-search.ts`、`lib/search-worker.ts`、`lib/dashboard-query.ts` |
+| 移动工作台 | `app/m/`、`components/mobile/`、`app/manifest.ts`、`public/sw.js` |
 | 运维 | `lib/system-health.ts`、`scripts/`、`docker-compose*.yml` |
 
 ## 下一步
 
-- [ ] 使用当前源码重新运行 GitHub Actions，确认浏览器搜索、容器权限、数据库角色、真实备份和隔离恢复演练全部通过。
-- [ ] 正式发布前在目标桌面与移动视口检查视觉层级、响应式布局和真实文件选择器体验。
+- [x] 移动工作台功能提交的 [`5edd090` GitHub Actions](https://github.com/bringup113/immigration-order-manager-docker/actions/runs/35902230812) 已完成并通过；发布任务依赖 verify 门禁。后续提交的运行结果以 [Actions 页面](https://github.com/bringup113/immigration-order-manager-docker/actions) 为准。
+- [ ] 在 iPhone 与 Android 真机完成安装、摄像头、文件选择器、键盘与安全区检查，并用脱敏样本复测 MRZ 图片/PDF 的准确率、耗时和峰值内存。
 - [x] 已在目标 NAS 按实际域名、Lucky、Origin 和 MFA 策略部署；应用、数据库、备份及 MRZ 容器健康，公网 HTTPS 与移动登录返回路径正常。
-- [ ] 对最新数据库备份执行恢复演练；数据库备份异地加密保存，附件继续由电脑端留档。
-- [x] 当前修复已通过完整隔离 CI，并建立 `v1.0.2` Git 稳定基线。
-- [ ] 按[手机端与 PWA 开发计划](MOBILE_PWA_DEVELOPMENT_PLAN.md)完成移动工作台真机验收；M0～M5 已进入源码，本地 M6 门禁、目标 NAS 部署、基础性能和公网 HTTPS 资源已通过，仍需 iPhone／Android 安装、摄像头、文件选择器及脱敏 MRZ 样本验收。
+- [ ] 定期对最新数据库备份执行隔离恢复演练；数据库备份异地加密保存，附件继续由电脑端留档。
+- [x] 当前移动工作台及订单优化已推送到 GitHub `main`；本地 M6 门禁、NAS 部署、基础性能和公网 HTTPS 资源已验证。
 
 ## 文档分工
 
-- [README](../README.md)：当前产品能力、部署、备份与常用命令。
+- [README](../README.md)：图文产品入口和部署快速开始。
 - [开发约束](DEVELOPMENT.md)：长期有效的代码、权限、日志、数据和测试规则。
-- [手机端与 PWA 开发计划](MOBILE_PWA_DEVELOPMENT_PLAN.md)：已确认的手机端范围、效果图、代码复用、安装与缓存边界、开发阶段和验收标准。
+- [移动工作台说明](MOBILE_PWA_DEVELOPMENT_PLAN.md)：当前手机端范围、页面结构图、代码复用、安装与缓存边界、阶段和验收标准。
+- [部署与运维说明](OPERATIONS.md)：备份恢复、资源配置、常用命令与测试条件。
 - [当前源码审阅与验证](CODE_QUALITY.md)：当前结构、已知边界和最近一次可重复验证结果。
 - [MRZ 服务说明](MRZ_SIDECAR_POC_2026-09-14.md)：当前识别配置、运行检查和验证边界。
 - [历史性能基线](PERFORMANCE_REPORT_2026-09-11.md)：特定旧环境下的实测数据，只作历史参考。

@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="710" viewBox="0 0 1200 710" role="img" aria-labelledby="title desc">
+  <title id="title">MIGRA 移动工作台当前页面结构</title>
+  <desc id="desc">四个手机页面结构示意：工作台、订单、订单详情和全局搜索。使用示例数据，不是真实订单截图。</desc>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#173042}
+    .small{font-size:12px;fill:#64748b}.tiny{font-size:10px;fill:#64748b}.body{font-size:13px}.bold{font-weight:700}.teal{fill:#0f766e}.white{fill:white}.muted{fill:#475569}
+  </style>
+  <rect width="1200" height="710" rx="28" fill="#f2f7f7"/>
+  <text x="48" y="56" font-size="30" font-weight="800">MIGRA 移动工作台</text>
+  <text x="49" y="83" class="small">基于当前四入口与订单四模块绘制 · 示例数据 · 页面结构示意</text>
+
+  <g transform="translate(38 118)">
+    <text x="91" y="-10" class="body bold">01 工作台</text>
+    <rect width="268" height="548" rx="30" fill="#19343e"/>
+    <rect x="8" y="8" width="252" height="532" rx="23" fill="#f8fafc"/>
+    <rect x="93" y="14" width="82" height="12" rx="6" fill="#19343e"/>
+    <text x="24" y="56" class="body bold">工作台</text><text x="225" y="55" class="teal" font-size="19">↻</text>
+    <text x="24" y="91" class="tiny teal bold">MIGRA · 移民订单</text>
+    <text x="24" y="121" font-size="20" font-weight="700">需要处理的事</text>
+    <text x="24" y="141" class="small">先看逾期与今天，再安排未来 7 天</text>
+    <rect x="20" y="160" width="72" height="72" rx="13" fill="#fff1f2" stroke="#fecdd3"/>
+    <text x="32" y="181" class="tiny">逾期</text><text x="32" y="216" font-size="25" font-weight="700" fill="#be123c">3</text>
+    <rect x="98" y="160" width="72" height="72" rx="13" fill="white" stroke="#e2e8f0"/>
+    <text x="110" y="181" class="tiny">今天</text><text x="110" y="216" font-size="25" font-weight="700">2</text>
+    <rect x="176" y="160" width="72" height="72" rx="13" fill="white" stroke="#e2e8f0"/>
+    <text x="184" y="181" class="tiny">未来 7 天</text><text x="188" y="216" font-size="25" font-weight="700">5</text>
+    <text x="23" y="262" class="body bold">全部待办 · 10</text>
+    <rect x="20" y="277" width="228" height="93" rx="15" fill="white" stroke="#e2e8f0"/>
+    <rect x="32" y="290" width="31" height="31" rx="10" fill="#ccfbf1"/>
+    <text x="73" y="306" class="small">示例申请人 · 示例项目</text>
+    <text x="73" y="329" class="body bold">补交学历材料</text>
+    <text x="73" y="352" font-size="11" fill="#be123c">已逾期 · 2026-09-20</text>
+    <rect x="20" y="381" width="228" height="93" rx="15" fill="white" stroke="#e2e8f0"/>
+    <rect x="32" y="394" width="31" height="31" rx="10" fill="#fef3c7"/>
+    <text x="73" y="410" class="small">另一位申请人 · 示例项目</text>
+    <text x="73" y="433" class="body bold">第二期服务费</text>
+    <text x="73" y="456" class="small">今天到期 · 2026-09-24</text>
+    <rect x="8" y="486" width="252" height="54" rx="0" fill="white"/>
+    <text x="24" y="515" class="tiny teal bold">工作台</text><text x="87" y="515" class="tiny">订单</text><text x="150" y="515" class="tiny">搜索</text><text x="211" y="515" class="tiny">我的</text>
+  </g>
+
+  <g transform="translate(327 118)">
+    <text x="102" y="-10" class="body bold">02 订单</text>
+    <rect width="268" height="548" rx="30" fill="#19343e"/>
+    <rect x="8" y="8" width="252" height="532" rx="23" fill="#f8fafc"/>
+    <rect x="93" y="14" width="82" height="12" rx="6" fill="#19343e"/>
+    <text x="24" y="56" class="body bold">订单</text>
+    <rect x="20" y="75" width="228" height="38" rx="10" fill="white" stroke="#cbd5e1"/>
+    <text x="33" y="99" class="small">搜索当前订单列表</text>
+    <rect x="20" y="126" width="49" height="27" rx="13" fill="#0f766e"/>
+    <text x="32" y="144" class="tiny white">全部</text>
+    <text x="78" y="144" class="tiny">办理中</text><text x="139" y="144" class="tiny">暂停</text><text x="185" y="144" class="tiny">已完成</text>
+    <text x="22" y="181" class="small">共 12 张订单</text><text x="168" y="181" class="tiny teal">签约日期 ↓</text>
+    <rect x="20" y="196" width="228" height="112" rx="15" fill="white" stroke="#e2e8f0"/>
+    <text x="34" y="221" class="body bold">示例申请人</text>
+    <rect x="194" y="205" width="44" height="22" rx="11" fill="#ccfbf1"/>
+    <text x="202" y="219" class="tiny teal">办理中</text>
+    <text x="34" y="243" class="small">示例移民项目</text>
+    <line x1="34" y1="258" x2="233" y2="258" stroke="#e2e8f0"/>
+    <text x="34" y="280" class="small">当前：材料审核</text>
+    <text x="34" y="297" class="tiny">流程预计 2026-09-30</text>
+    <rect x="20" y="321" width="228" height="112" rx="15" fill="white" stroke="#e2e8f0"/>
+    <text x="34" y="346" class="body bold">另一位申请人</text>
+    <rect x="194" y="330" width="44" height="22" rx="11" fill="#ccfbf1"/>
+    <text x="202" y="344" class="tiny teal">办理中</text>
+    <text x="34" y="368" class="small">另一示例项目</text>
+    <line x1="34" y1="383" x2="233" y2="383" stroke="#e2e8f0"/>
+    <text x="34" y="405" class="small">当前：递交申请</text>
+    <text x="34" y="422" class="tiny">待跟进 2026-10-03</text>
+    <text x="38" y="465" class="tiny">上一页</text><text x="127" y="465" class="tiny">1 / 2</text><text x="204" y="465" class="tiny">下一页</text>
+    <rect x="8" y="486" width="252" height="54" fill="white"/>
+    <text x="24" y="515" class="tiny">工作台</text><text x="87" y="515" class="tiny teal bold">订单</text><text x="150" y="515" class="tiny">搜索</text><text x="211" y="515" class="tiny">我的</text>
+  </g>
+
+  <g transform="translate(616 118)">
+    <text x="80" y="-10" class="body bold">03 订单详情</text>
+    <rect width="268" height="548" rx="30" fill="#19343e"/>
+    <rect x="8" y="8" width="252" height="532" rx="23" fill="#f8fafc"/>
+    <rect x="93" y="14" width="82" height="12" rx="6" fill="#19343e"/>
+    <text x="24" y="56" class="body bold">‹　订单详情</text>
+    <rect x="20" y="72" width="228" height="78" rx="14" fill="white" stroke="#e2e8f0"/>
+    <text x="33" y="95" class="body bold">示例申请人</text>
+    <rect x="194" y="81" width="42" height="20" rx="10" fill="#ccfbf1"/>
+    <text x="201" y="95" class="tiny teal">办理中</text>
+    <text x="33" y="116" class="small">示例移民项目 · 负责人：示例用户</text>
+    <text x="33" y="137" class="tiny">EX-2026092401</text>
+    <rect x="15" y="163" width="238" height="43" rx="11" fill="white" stroke="#e2e8f0"/>
+    <rect x="18" y="166" width="55" height="37" rx="8" fill="#ccfbf1"/>
+    <text x="28" y="190" class="tiny teal bold">办理</text><text x="82" y="190" class="tiny">收支</text><text x="131" y="190" class="tiny">申请人</text><text x="197" y="190" class="tiny">合同</text>
+    <rect x="20" y="220" width="228" height="54" rx="14" fill="white" stroke="#e2e8f0"/>
+    <text x="34" y="241" class="small bold">办理流程</text><text x="34" y="260" class="tiny">当前步骤：材料审核</text>
+    <line x1="40" y1="294" x2="40" y2="388" stroke="#99d8d1" stroke-width="2"/>
+    <circle cx="40" cy="301" r="10" fill="#0f766e"/><text x="36" y="305" font-size="10" class="white">✓</text>
+    <text x="62" y="306" class="body">签订合同</text><text x="62" y="321" class="tiny">已完成</text>
+    <circle cx="40" cy="351" r="10" fill="#0f766e" stroke="#99d8d1" stroke-width="3"/>
+    <text x="62" y="355" class="body bold">材料审核</text><text x="62" y="371" class="tiny teal">进行中 · 预计 09-30</text>
+    <circle cx="40" cy="401" r="10" fill="white" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="62" y="405" class="body">递交申请</text><text x="62" y="420" class="tiny">未开始</text>
+    <rect x="20" y="439" width="228" height="37" rx="10" fill="#0f766e"/>
+    <text x="99" y="462" class="body bold" style="fill:#ffffff">完成步骤</text>
+    <rect x="8" y="486" width="252" height="54" fill="white"/>
+    <text x="24" y="515" class="tiny">工作台</text><text x="87" y="515" class="tiny teal bold">订单</text><text x="150" y="515" class="tiny">搜索</text><text x="211" y="515" class="tiny">我的</text>
+  </g>
+
+  <g transform="translate(905 118)">
+    <text x="88" y="-10" class="body bold">04 全局搜索</text>
+    <rect width="268" height="548" rx="30" fill="#19343e"/>
+    <rect x="8" y="8" width="252" height="532" rx="23" fill="#f8fafc"/>
+    <rect x="93" y="14" width="82" height="12" rx="6" fill="#19343e"/>
+    <text x="24" y="56" class="body bold">搜索</text>
+    <rect x="20" y="75" width="228" height="39" rx="10" fill="white" stroke="#cbd5e1"/>
+    <text x="33" y="100" class="small">搜索订单、申请人、项目…</text>
+    <text x="22" y="137" class="tiny">共用桌面端搜索索引与权限规则</text>
+    <text x="22" y="173" class="body bold">订单</text>
+    <rect x="20" y="187" width="228" height="101" rx="15" fill="white" stroke="#e2e8f0"/>
+    <text x="34" y="212" class="body bold">示例移民项目</text>
+    <text x="34" y="232" class="small">示例申请人 · EX-2026092401</text>
+    <text x="34" y="255" class="tiny teal">命中：护照首页 → 申请人与材料</text>
+    <rect x="20" y="300" width="228" height="101" rx="15" fill="white" stroke="#e2e8f0"/>
+    <text x="34" y="325" class="body bold">另一示例项目</text>
+    <text x="34" y="345" class="small">另一位申请人 · EX-2026092402</text>
+    <text x="34" y="368" class="tiny teal">命中：服务费 → 订单收支</text>
+    <text x="22" y="434" class="body bold">项目与代理</text>
+    <text x="22" y="455" class="small">按组显示匹配摘要</text>
+    <rect x="8" y="486" width="252" height="54" fill="white"/>
+    <text x="24" y="515" class="tiny">工作台</text><text x="87" y="515" class="tiny">订单</text><text x="150" y="515" class="tiny teal bold">搜索</text><text x="211" y="515" class="tiny">我的</text>
+  </g>
+  <text x="47" y="690" class="small">说明：此图只展示当前信息层级和入口；真实页面随权限、订单数据与设备宽度变化。</text>
+</svg>
