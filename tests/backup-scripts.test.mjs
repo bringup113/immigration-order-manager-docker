@@ -19,6 +19,8 @@ import test from "node:test";
 const backupScript = resolve("scripts/postgres-backup-once.sh");
 const restoreDrillScript = resolve("scripts/restore-drill-postgres.sh");
 const restoreScript = resolve("scripts/restore-postgres.sh");
+const verifyBackupScript = resolve("scripts/verify-postgres-backup.sh");
+const verifyDeploymentScript = resolve("scripts/verify-deployment-security.sh");
 const executableScripts = [
   "scripts/backup-postgres.sh",
   "scripts/postgres-backup-loop.sh",
@@ -178,4 +180,13 @@ test("restore drill runs migrations and integrity checks inside Docker", () => {
   assert.match(script, /dropdb --if-exists --force/);
   assert.match(script, /count\(\*\) FROM projects/);
   assert.match(script, /count\(\*\) FROM exchange_rates/);
+});
+
+test("deployment verification supports isolated Compose projects and backup roots", () => {
+  const deployment = readFileSync(verifyDeploymentScript, "utf8");
+  const backup = readFileSync(verifyBackupScript, "utf8");
+  assert.match(deployment, /docker compose ps -q migra/);
+  assert.doesNotMatch(deployment, /docker inspect migra-order-manager/);
+  assert.match(backup, /BACKUP_ROOT/);
+  assert.match(backup, /BACKUP_CONTAINER_ROOT/);
 });

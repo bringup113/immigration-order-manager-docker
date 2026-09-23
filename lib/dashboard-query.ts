@@ -3,14 +3,43 @@ import type { AppDatabase } from "@/db/driver";
 import { hasPermission } from "@/lib/docker-auth";
 import { orderScopeFilter } from "@/lib/order-access";
 
-export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
+export type ReminderRange = "all" | "overdue" | "today" | "week";
+
+export async function readDashboard(db: AppDatabase, user: ChatGPTUser, reminderRange?: ReminderRange) {
   const sevenDays = "CURRENT_DATE + 7";
   const orderScope = orderScopeFilter(user, "o");
   const canReadOrders = hasPermission(user, "orders.read");
   const canReadFinance = hasPermission(user, "finance.read");
   const canReadMaterials = hasPermission(user, "materials.read");
   const canReadTasks = hasPermission(user, "tasks.read");
-  const [orders, outstanding, balance, reminders, trend] =
+  const reminderScopeValues = Array.from({ length: 5 }, () => orderScope.values).flat();
+  const reminderSources = `SELECT CASE op.plan_type WHEN 'RECEIVABLE' THEN '收款计划' ELSE '付款计划' END AS source,
+        CASE op.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END AS reminder_type,
+        'finance' AS target_tab,op.due_date,o.order_no,op.name AS title,o.project_name_snapshot AS project_name,
+        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1) AS main_applicant
+        FROM order_plans op JOIN orders o ON o.id=op.order_id WHERE ${canReadFinance} AND ${orderScope.sql} AND op.due_date IS NOT NULL AND o.status IN ('ACTIVE','PAUSED') AND op.due_date<=${sevenDays}
+        AND op.planned_amount_minor > COALESCE((
+          SELECT SUM(e.plan_amount_minor) FROM order_cash_entries e
+          WHERE e.order_plan_id=op.id AND e.order_id=op.order_id AND e.status='ACTIVE'
+            AND e.direction=CASE op.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END
+        ),0)
+      UNION ALL SELECT '办理流程','STEP','workflow',s.due_date,o.order_no,s.name,o.project_name_snapshot,
+        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
+        FROM order_steps s JOIN orders o ON o.id=s.order_id WHERE ${canReadOrders} AND ${orderScope.sql} AND s.due_date IS NOT NULL AND s.status IN ('PENDING','IN_PROGRESS') AND o.status IN ('ACTIVE','PAUSED') AND s.due_date<=${sevenDays}
+      UNION ALL SELECT '待跟进','FOLLOW_UP','workflow',g.follow_up_date,o.order_no,COALESCE(NULLIF(g.next_action,''),g.title),o.project_name_snapshot,
+        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
+        FROM order_progress g JOIN orders o ON o.id=g.order_id WHERE ${canReadOrders} AND ${orderScope.sql} AND g.follow_up_date IS NOT NULL AND g.follow_up_done=0 AND o.status IN ('ACTIVE','PAUSED') AND g.follow_up_date<=${sevenDays}
+      UNION ALL SELECT '材料收集','MATERIAL',CASE WHEN m.applicant_id IS NOT NULL THEN 'people' ELSE 'common' END,m.expected_date,o.order_no,m.name,o.project_name_snapshot,
+        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
+        FROM order_materials m JOIN orders o ON o.id=m.order_id WHERE ${canReadMaterials} AND ${orderScope.sql} AND m.expected_date IS NOT NULL AND NOT EXISTS (SELECT 1 FROM material_files f WHERE f.material_id=m.id AND f.status='ACTIVE') AND o.status IN ('ACTIVE','PAUSED') AND m.expected_date<=${sevenDays}
+      UNION ALL SELECT '订单待办','TASK','workflow',t.due_date,o.order_no,t.title,o.project_name_snapshot,
+        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
+        FROM order_tasks t JOIN orders o ON o.id=t.order_id WHERE ${canReadTasks} AND ${orderScope.sql} AND t.status='OPEN' AND o.status IN ('ACTIVE','PAUSED') AND t.due_date<=${sevenDays}`;
+  const reminderDateFilter = reminderRange === "overdue" ? "due_date<CURRENT_DATE"
+    : reminderRange === "today" ? "due_date=CURRENT_DATE"
+    : reminderRange === "week" ? "due_date>CURRENT_DATE AND due_date<=CURRENT_DATE+7"
+    : "TRUE";
+  const [orders, outstanding, balance, reminders, reminderCounts, trend] =
     await Promise.all([
       canReadOrders
         ? db
@@ -52,33 +81,18 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
         : Promise.resolve(null),
       db
         .prepare(
-          `SELECT * FROM (
-      SELECT CASE op.plan_type WHEN 'RECEIVABLE' THEN '收款计划' ELSE '付款计划' END AS source,
-        CASE op.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END AS reminder_type,
-        'finance' AS target_tab,op.due_date,o.order_no,op.name AS title,o.project_name_snapshot AS project_name,
-        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1) AS main_applicant
-        FROM order_plans op JOIN orders o ON o.id=op.order_id WHERE ${canReadFinance} AND ${orderScope.sql} AND op.due_date IS NOT NULL AND o.status IN ('ACTIVE','PAUSED') AND op.due_date<=${sevenDays}
-        AND op.planned_amount_minor > COALESCE((
-          SELECT SUM(e.plan_amount_minor) FROM order_cash_entries e
-          WHERE e.order_plan_id=op.id AND e.order_id=op.order_id AND e.status='ACTIVE'
-            AND e.direction=CASE op.plan_type WHEN 'RECEIVABLE' THEN 'RECEIPT' ELSE 'PAYMENT' END
-        ),0)
-      UNION ALL SELECT '办理流程','STEP','workflow',s.due_date,o.order_no,s.name,o.project_name_snapshot,
-        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
-        FROM order_steps s JOIN orders o ON o.id=s.order_id WHERE ${canReadOrders} AND ${orderScope.sql} AND s.due_date IS NOT NULL AND s.status IN ('PENDING','IN_PROGRESS') AND o.status IN ('ACTIVE','PAUSED') AND s.due_date<=${sevenDays}
-      UNION ALL SELECT '待跟进','FOLLOW_UP','workflow',g.follow_up_date,o.order_no,COALESCE(NULLIF(g.next_action,''),g.title),o.project_name_snapshot,
-        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
-        FROM order_progress g JOIN orders o ON o.id=g.order_id WHERE ${canReadOrders} AND ${orderScope.sql} AND g.follow_up_date IS NOT NULL AND g.follow_up_done=0 AND o.status IN ('ACTIVE','PAUSED') AND g.follow_up_date<=${sevenDays}
-      UNION ALL SELECT '材料收集','MATERIAL',CASE WHEN m.applicant_id IS NOT NULL THEN 'people' ELSE 'common' END,m.expected_date,o.order_no,m.name,o.project_name_snapshot,
-        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
-        FROM order_materials m JOIN orders o ON o.id=m.order_id WHERE ${canReadMaterials} AND ${orderScope.sql} AND m.expected_date IS NOT NULL AND NOT EXISTS (SELECT 1 FROM material_files f WHERE f.material_id=m.id AND f.status='ACTIVE') AND o.status IN ('ACTIVE','PAUSED') AND m.expected_date<=${sevenDays}
-      UNION ALL SELECT '订单待办','TASK','workflow',t.due_date,o.order_no,t.title,o.project_name_snapshot,
-        (SELECT a.name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' ORDER BY a.sequence LIMIT 1)
-        FROM order_tasks t JOIN orders o ON o.id=t.order_id WHERE ${canReadTasks} AND ${orderScope.sql} AND t.status='OPEN' AND o.status IN ('ACTIVE','PAUSED') AND t.due_date<=${sevenDays}
-    ) scoped_reminders ORDER BY due_date,order_no LIMIT 30`,
+          `SELECT * FROM (${reminderSources}) scoped_reminders WHERE ${reminderDateFilter} ORDER BY due_date,order_no LIMIT 30`,
         )
-        .bind(...Array.from({ length: 5 }, () => orderScope.values).flat())
+        .bind(...reminderScopeValues)
         .all(),
+      reminderRange
+        ? db.prepare(`SELECT CURRENT_DATE::text AS today_key,
+            COUNT(*) FILTER (WHERE due_date<CURRENT_DATE) AS overdue,
+            COUNT(*) FILTER (WHERE due_date=CURRENT_DATE) AS today,
+            COUNT(*) FILTER (WHERE due_date>CURRENT_DATE AND due_date<=CURRENT_DATE+7) AS week
+            FROM (${reminderSources}) scoped_reminders`)
+            .bind(...reminderScopeValues).first()
+        : Promise.resolve(null),
       canReadFinance
         ? db
             .prepare(
@@ -106,6 +120,12 @@ export async function readDashboard(db: AppDatabase, user: ChatGPTUser) {
     payableMinor: Math.round(Number(outstanding?.payable ?? 0)),
     balanceMinor: Math.round(Number(balance?.value ?? 0)),
     reminders: allowedReminders,
+    ...(reminderRange ? { reminderCounts: {
+      todayKey: String(reminderCounts?.today_key ?? ""),
+      overdue: Number(reminderCounts?.overdue ?? 0),
+      today: Number(reminderCounts?.today ?? 0),
+      week: Number(reminderCounts?.week ?? 0),
+    } } : {}),
     trend: trend.results.reverse(),
     access: {
       orders: canReadOrders,

@@ -12,11 +12,17 @@ fi
 
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 backup_file="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+backup_root="${BACKUP_ROOT:-$project_root/backups/postgres}"
+if [[ ! -d "$backup_root" ]]; then
+  echo "备份目录不存在：$backup_root" >&2
+  exit 2
+fi
+backup_root="$(cd "$backup_root" && pwd)"
 case "$backup_file" in
-  "$project_root/backups/postgres/"*) ;;
-  *) echo "备份文件必须位于 backups/postgres/。" >&2; exit 2 ;;
+  "$backup_root/"*) ;;
+  *) echo "备份文件必须位于允许的备份目录：$backup_root" >&2; exit 2 ;;
 esac
-container_file="/backups/$(basename "$backup_file")"
+container_file="${BACKUP_CONTAINER_ROOT:-/backups}/$(basename "$backup_file")"
 minimum_bytes="${BACKUP_MIN_BYTES:-4096}"
 actual_bytes="$(wc -c < "$backup_file" | tr -d ' ')"
 if [[ "$actual_bytes" -lt "$minimum_bytes" ]]; then

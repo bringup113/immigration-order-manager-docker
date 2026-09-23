@@ -8,7 +8,7 @@ services:
     container_name: migra-order-manager
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${APP_PORT:-3000}:3000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     environment:
       APP_DEPLOYMENT: docker
       PUBLIC_PORT: "${APP_PORT:-3000}"

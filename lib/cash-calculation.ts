@@ -64,3 +64,38 @@ export function minorInput(value: number) {
 export function rateInput(value: number) {
   return (value / CASH_RATE_SCALE).toFixed(8).replace(/\.?0+$/, "");
 }
+
+type CashCalculationDraft = {
+  amount: string;
+  baseAmount: string;
+  ratePerUsd: string;
+  calculatedField: CashCalculatedField;
+};
+
+type CurrencyRate = {
+  currency: string;
+  rate_per_usd?: number;
+  rate_per_usd_scaled?: number;
+};
+
+export function defaultCashRate(currency: string, currencies: CurrencyRate[]) {
+  if (currency === "USD") return "1";
+  const option = currencies.find((item) => item.currency === currency);
+  if (option?.rate_per_usd_scaled) return rateInput(Number(option.rate_per_usd_scaled));
+  return option?.rate_per_usd ? String(option.rate_per_usd) : "";
+}
+
+export function withCashCalculation<T extends CashCalculationDraft>(next: T): T {
+  const calculated = calculateCashValues(next);
+  if (!calculated) return { ...next, [next.calculatedField]: "" };
+  if (next.calculatedField === "amount") return { ...next, amount: minorInput(calculated.amountMinor) };
+  if (next.calculatedField === "baseAmount") return { ...next, baseAmount: minorInput(calculated.baseAmountMinor) };
+  return { ...next, ratePerUsd: rateInput(calculated.rateScaled) };
+}
+
+export function planMinorFromBase(baseAmountMinor: number, budgetRateScaled: number) {
+  if (!Number.isSafeInteger(baseAmountMinor) || !Number.isSafeInteger(budgetRateScaled) || baseAmountMinor <= 0 || budgetRateScaled <= 0) return null;
+  const rounded = (BigInt(baseAmountMinor) * BigInt(budgetRateScaled) + BigInt(CASH_RATE_SCALE / 2)) / BigInt(CASH_RATE_SCALE);
+  const value = Number(rounded);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}

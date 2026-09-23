@@ -109,6 +109,14 @@ jobs:
           PLAYWRIGHT_MODULE: ${{ runner.temp }}/browser-tools/node_modules/playwright
         run: npm run test:browser:current
 
+      - name: Mobile reading browser regression
+        timeout-minutes: 5
+        env:
+          MIGRA_BASE_URL: http://127.0.0.1:3000
+          MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/browser-tools/node_modules/playwright
+        run: npm run test:browser:mobile:real
+
       - name: Session, password and device security
         env:
           MIGRA_BASE_URL: http://127.0.0.1:3000
@@ -121,6 +129,7 @@ jobs:
           MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
           MIGRA_ALLOW_TEST_FIXTURES: "1"
           MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+          MIGRA_TEST_UPLOAD_ROOT: ${{ github.workspace }}/data/files
         run: |
           node scripts/integration-test-fixture.mjs delete
           node scripts/integration-test-user.mjs delete "$MIGRA_TEST_CREDENTIAL_FILE"
@@ -144,6 +153,7 @@ jobs:
           MIGRA_DATABASE_URL: postgresql://migra:CiOnly-Owner-Password-2026@127.0.0.1:54329/migra
           MIGRA_ALLOW_TEST_FIXTURES: "1"
           MIGRA_TEST_CREDENTIAL_FILE: data/integration-test-credentials.txt
+          MIGRA_TEST_UPLOAD_ROOT: ${{ github.workspace }}/data/files
         run: |
           node scripts/integration-test-fixture.mjs delete || true
           node scripts/integration-test-user.mjs delete "$MIGRA_TEST_CREDENTIAL_FILE" || true

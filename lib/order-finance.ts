@@ -4,6 +4,7 @@ import { RATE_SCALE } from "@/db/defaults";
 import { toMinor } from "@/lib/amount";
 import {
   calculateCashValues,
+  planMinorFromBase,
   type CashCalculatedField,
 } from "@/lib/cash-calculation";
 import {
@@ -304,11 +305,9 @@ export async function saveCashEntry(
     planAmountMinor =
       currency === planCurrency
         ? amountMinor
-        : Math.round(
-            (baseAmountMinor * Number(plan.budget_rate_scaled)) / RATE_SCALE,
-          );
-    if (planAmountMinor <= 0)
-      throw new DomainError("折算后的计划币种金额必须大于 0。");
+        : planMinorFromBase(baseAmountMinor, Number(plan.budget_rate_scaled));
+    if (planAmountMinor === null)
+      throw new DomainError("折算后的计划币种金额超出允许范围或不足最小单位。");
   }
 
   const now = nowIso();

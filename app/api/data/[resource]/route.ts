@@ -18,7 +18,7 @@ import { FIELD_LIMITS, validateTextFields } from "@/lib/validation";
 import { orderScopeFilter } from "@/lib/order-access";
 import { getDataResourcePolicy } from "@/lib/data-resource-policy";
 import { readGlobalSearch } from "@/lib/global-search-query";
-import { readDashboard } from "@/lib/dashboard-query";
+import { readDashboard, type ReminderRange } from "@/lib/dashboard-query";
 import { readOrderCatalogs } from "@/lib/order-catalog-query";
 import {
   createProjectResource,
@@ -139,7 +139,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json(result.data);
   }
   if (resource === "dashboard") {
-    return NextResponse.json(await readDashboard(db, auth.user));
+    const requestedRange = request.nextUrl.searchParams.get("range");
+    const range: ReminderRange | undefined = requestedRange === "all" || requestedRange === "overdue" || requestedRange === "today" || requestedRange === "week" ? requestedRange : undefined;
+    return NextResponse.json(await readDashboard(db, auth.user, range));
   }
   return jsonError("没有找到该数据模块。", 404);
 }

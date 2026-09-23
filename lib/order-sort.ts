@@ -5,6 +5,8 @@ export const orderSortOptions = [
   { value: "updated_desc", label: "最近更新" },
 ] as const;
 
+export const DEFAULT_ORDER_SORT = "signed_desc";
+
 export function orderSortSql(value: string | null) {
   switch (value) {
     case "signed_asc":

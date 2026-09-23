@@ -340,7 +340,6 @@ async function handlePost(
           { id, orderNo: String(order.order_no) },
           body,
           mutationAuth.user!.id,
-          movedFiles,
         );
         return NextResponse.json({ ok: true });
       }

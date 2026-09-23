@@ -18,7 +18,7 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
  const sql=new pg.Client({connectionString:databaseUrl});await sql.connect();
  const suffix=randomUUID().replaceAll('-','').slice(0,12);
  const marker='全订单测试'+suffix;
- const orderIds=[];let agent,project;
+ const orderIds=[],extraAgents=[],extraProjects=[];let agent,project;
  const headers={cookie,'content-type':'application/json'};
  const get=async(path)=>{const response=await fetch(base+path,{headers:{cookie}});assert.equal(response.status,200,await response.clone().text());return response.json();};
  const post=async(path,body,status=200)=>{const response=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});const data=await response.json();assert.equal(response.status,status,JSON.stringify(data));return data;};
@@ -28,17 +28,22 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
    assert.fail('Search index did not converge: '+term);
  };
  try {
-   agent=await post('/api/data/agents',{name:marker+'代理'},201);
+   agent=await post('/api/data/agents',{name:marker+'核心代理'},201);
    project=await post('/api/data/projects',{name:marker+'项目',country:'测试国',code:'LR'+suffix.toUpperCase()},201);
-   const create=async()=>{
+   const create=async(includeLargeMaterialSet=true)=>{
     const order=await post('/api/data/orders',{agentId:agent.id,projectId:project.id,status:'DRAFT',signedAt:'2026-09-10',notes:marker,
       applicants:[{name:'张三'+suffix,passportNo:'PASS'+suffix,nationality:'CHN',birthDate:'1990-01-01',passportExpiry:'2035-01-01',applicantType:'MAIN'}],
       steps:[{name:marker+'办理',required:true},{name:'后续步骤',required:true}],
       plans:[{name:marker+'费用',planType:'RECEIVABLE',currency:'USD',amount:'123.45'}],
-      materials:Array.from({length:105},(_,i)=>({name:marker+'材料'+i,scope:'COMMON',required:false}))},201);
+      materials:includeLargeMaterialSet?Array.from({length:105},(_,i)=>({name:marker+'材料'+i,scope:'COMMON',required:false})):[]},201);
     orderIds.push(order.id);return order;
    };
    const order=await create();const second=await create();
+   for(let index=0;index<11;index+=1)await create(false);
+   for(let index=0;index<8;index+=1){
+     extraAgents.push(await post('/api/data/agents',{name:`${marker}代理分页${index}`},201));
+     extraProjects.push(await post('/api/data/projects',{name:`${marker}项目分页${index}`,country:'测试国',code:`PG${index}${suffix.toUpperCase()}`},201));
+   }
    const path='/api/orders/'+order.orderNo;
    let detail=await get(path);
    await t.test('bulk order inserts retain every material and planned amount',()=>{
@@ -51,7 +56,7 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
    await t.test('all order sources remain searchable without rebuilding on each read',async()=>{
      for(const term of [marker+'材料104','PASS'+suffix,marker+'办理',marker+'费用','深层备注'+suffix,'zhangsan'+suffix])
        await waitSearch(term,data=>data.orders.some(row=>row.order_no===order.orderNo));
-     await waitSearch(marker+'代理',data=>data.agents.some(row=>row.id===agent.id));
+     await waitSearch(marker+'核心代理',data=>data.agents.some(row=>row.id===agent.id));
      const before=await sql.query('SELECT updated_at FROM order_search_index WHERE order_id=$1',[order.id]);
      await get('/api/data/search?q='+encodeURIComponent(marker));await get('/api/data/search?q='+encodeURIComponent(marker));
      const after=await sql.query('SELECT updated_at FROM order_search_index WHERE order_id=$1',[order.id]);
@@ -59,11 +64,30 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
      const escaped=await get('/api/data/search?q='+encodeURIComponent('%UNMATCHED_'+suffix));assert.equal(escaped.orders.length,0);
      const separators=await get('/api/data/search?q='+encodeURIComponent('+'));assert.deepEqual({orders:separators.orders,projects:separators.projects,agents:separators.agents},{orders:[],projects:[],agents:[]});
    });
+   await t.test('grouped search pages beyond desktop defaults without duplicates',async()=>{
+     const defaults=await waitSearch(marker,data=>data.orders.length===12&&data.pagination?.orders?.hasMore&&data.projects.length===8&&data.pagination?.projects?.hasMore&&data.agents.length===8&&data.pagination?.agents?.hasMore);
+     assert.equal(defaults.pagination.orders.pageSize,12);assert.equal(defaults.pagination.projects.pageSize,8);assert.equal(defaults.pagination.agents.pageSize,8);
+     const orderPages=[];
+     for(let page=1;page<=3;page+=1)orderPages.push(await get('/api/data/search?q='+encodeURIComponent(marker)+`&group=orders&page=${page}&pageSize=5`));
+     assert.deepEqual(orderPages.map(item=>item.orders.length),[5,5,3]);assert.deepEqual(orderPages.map(item=>item.pagination.orders.hasMore),[true,true,false]);
+     assert.equal(new Set(orderPages.flatMap(item=>item.orders.map(row=>row.order_no))).size,13);
+     assert.ok(orderPages.every(item=>item.projects.length===0&&item.agents.length===0&&!item.pagination.projects.loaded&&!item.pagination.agents.loaded));
+     const projectTail=await get('/api/data/search?q='+encodeURIComponent(marker)+'&group=projects&page=3&pageSize=4');
+     const agentTail=await get('/api/data/search?q='+encodeURIComponent(marker)+'&group=agents&page=3&pageSize=4');
+     assert.equal(projectTail.projects.length,1);assert.equal(projectTail.pagination.projects.hasMore,false);
+     assert.equal(agentTail.agents.length,1);assert.equal(agentTail.pagination.agents.hasMore,false);
+     for(const group of ['projects','agents']){
+       const pages=await Promise.all([1,2,3].map(page=>get('/api/data/search?q='+encodeURIComponent(marker)+`&group=${group}&page=${page}&pageSize=4`)));
+       const ids=pages.flatMap(item=>item[group].map(row=>row.id));
+       assert.equal(ids.length,9);assert.equal(new Set(ids).size,9);
+       assert.deepEqual(pages.map(item=>item.pagination[group].hasMore),[true,true,false]);
+     }
+   });
    await t.test('server paging is stable and includes orders beyond the first page',async()=>{
      const first=await get('/api/data/orders?pageSize=1&q='+encodeURIComponent(marker));
      const next=await get('/api/data/orders?pageSize=1&page=2&q='+encodeURIComponent(marker));
      assert.equal(first.rows.length,1);assert.equal(first.hasMore,true);assert.equal(next.rows.length,1);assert.notEqual(first.rows[0].id,next.rows[0].id);
-     assert.deepEqual(new Set([first.rows[0].id,next.rows[0].id]),new Set([order.id,second.id]));
+     assert.ok(orderIds.includes(first.rows[0].id));assert.ok(orderIds.includes(next.rows[0].id));
      const page1=await get(path+'?section=workflow');const page2=await get(path+'?section=workflow&historyPage=2');
      assert.equal(page1.progress.length,50);assert.equal(page1.historyHasMore,true);assert.equal(page2.progress.length,16);
      assert.equal(new Set([...page1.progress,...page2.progress].map(row=>row.id)).size,66);
@@ -105,6 +129,8 @@ test('low-resource search, pagination, transaction and streaming regressions',{s
      }
      await sql.query('DELETE FROM orders WHERE id=$1',[id]);
    }
+   for(const item of extraProjects)await sql.query('DELETE FROM projects WHERE id=$1',[item.id]);
+   for(const item of extraAgents)await sql.query('DELETE FROM agents WHERE id=$1',[item.id]);
    if(project)await sql.query('DELETE FROM projects WHERE id=$1',[project.id]);
    if(agent)await sql.query('DELETE FROM agents WHERE id=$1',[agent.id]);
    await sql.end();

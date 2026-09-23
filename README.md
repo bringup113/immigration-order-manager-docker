@@ -58,6 +58,8 @@ docker compose --profile bench run --rm mrzscanner_bench --runs 10 --parallel 3
 
 登录后可在“用户与角色”中创建账号、分配内置或自定义角色；在“登录与安全”中修改自己的密码。
 
+当前 Docker 部署可通过桌面侧栏“手机版”或 `/m` 使用移动工作台：工作台按逾期、今天及未来 7 天统计待办，订单列表以主申请人为主、支持状态筛选，普通订单先显示概览；搜索和提醒仍直达相应模块。具备相应权限的用户可在手机上完成当前流程步骤、新增跟进、分别登记收款和付款，并拍照／选文件上传及预览材料；护照 MRZ 识别后须人工核对确认。手机端常规导航始终保留在 `/m`，只有用户在“我的”中明确选择“切换到桌面版”才进入完整桌面界面。“我的”还可修改密码、管理双重验证和登录设备，并提供添加到手机桌面的安装说明。PWA 使用正式 HTTPS 地址安装，只缓存公开静态资源和通用离线提示，不缓存订单、财务、附件或登录数据；真机验收状态见[移动工作台开发计划](docs/MOBILE_PWA_DEVELOPMENT_PLAN.md)。
+
 项目管理页提供“导出全部”和“导入项目”，项目详情提供“导出项目”。项目包包含项目基本资料、渠道关联、流程、收付款、材料及所需币种；不包含订单、代理、账号、日志、附件或全局材料库。导入时复用相同代码的本地渠道与币种，不覆盖渠道资料和当前汇率；缺少的依赖会在预检中列出并随项目创建。
 
 ### 常用命令
@@ -202,14 +204,14 @@ docker compose -f docker-compose.yml -f docker-compose.low-resource.yml up -d
 
 ### 浏览器 CI
 
-CI 在隔离 Docker 环境中使用固定版本 Playwright Chromium。`npm run test:browser` 覆盖搜索退避、截止、请求取消与结果状态保留；`npm run test:browser:current` 覆盖首页提醒跳转、订单列表服务端排序，以及新订单签订日期联动模板日期、手工日期保持和仅姓名申请人建单。两组浏览器测试通过后才允许发布镜像。宿主机可通过 `PLAYWRIGHT_MODULE`、`CHROME_PATH`、`MIGRA_BASE_URL` 和 `MIGRA_TEST_CREDENTIAL_FILE` 指定测试环境。
+CI 在隔离 Docker 环境中使用固定版本 Playwright Chromium。`npm run test:browser` 覆盖搜索退避、截止、请求取消与结果状态保留；`npm run test:browser:current` 覆盖首页提醒跳转、订单列表排序及新订单模板日期等；`npm run test:browser:mobile:real` 覆盖手机深链登录、真实订单、搜索、完成步骤、跟进、收付款登记及材料上传／预览。全部浏览器测试通过后才允许发布镜像。宿主机可通过 `PLAYWRIGHT_MODULE`、`CHROME_PATH`、`MIGRA_BASE_URL` 和 `MIGRA_TEST_CREDENTIAL_FILE` 指定测试环境。
 
 数据库备份统一使用 `scripts/backup-postgres.sh`。恢复演练及正式恢复后的附件一致性检查均遵循“不备份附件”的约定。
 
 ## 维护文档
 
 - [当前状态与后续工作](docs/IMPLEMENTATION_PLAN.md)
-- [手机端与 PWA 开发计划（含效果图，待实施）](docs/MOBILE_PWA_DEVELOPMENT_PLAN.md)
+- [移动工作台与 PWA 开发计划（M4 本地已验证）](docs/MOBILE_PWA_DEVELOPMENT_PLAN.md)
 - [开发规范](docs/DEVELOPMENT.md)
 - [当前源码审阅与验证](docs/CODE_QUALITY.md)
 - [MRZ 服务说明](docs/MRZ_SIDECAR_POC_2026-09-14.md)

@@ -12,19 +12,9 @@ import {
   writeSecurityAudit,
 } from "@/lib/docker-auth";
 import { isAllowedMutationOrigin } from "@/lib/api-auth";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 export const dynamic = "force-dynamic";
-
-function safeReturnTo(value: string | null) {
-  if (
-    !value ||
-    !value.startsWith("/") ||
-    value.startsWith("//") ||
-    /[\\\x00-\x20]/.test(value)
-  )
-    return "/";
-  return value.startsWith("/api/auth/") ? "/" : value;
-}
 
 const pageHeaders = {
   "content-type": "text/html; charset=utf-8",
@@ -138,7 +128,7 @@ function sessionResponse(
 }
 
 export async function GET(request: NextRequest) {
-  const returnTo = safeReturnTo(request.nextUrl.searchParams.get("return_to"));
+  const returnTo = safeReturnPath(request.nextUrl.searchParams.get("return_to"));
   if (!isDockerDeployment()) {
     return NextResponse.redirect(
       new URL(
@@ -182,7 +172,7 @@ export async function POST(request: NextRequest) {
     );
   }
   const form = await request.formData();
-  const returnTo = safeReturnTo(String(form.get("return_to") || "/"));
+  const returnTo = safeReturnPath(String(form.get("return_to") || "/"));
   const action = String(form.get("action") || "login");
   const username = String(form.get("username") || "");
   const password = String(form.get("password") || "");

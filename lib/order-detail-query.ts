@@ -24,11 +24,12 @@ export async function readOrderDetail(
   if (!order) return jsonError("订单不存在。", 404);
   const id = String(order.id);
   const section = params.get("section") || "all";
+  const overview = section === "overview";
   const workflow = section === "all" || section === "workflow";
   const finance = section === "all" || section === "finance";
   const files =
     section === "all" || section === "people" || section === "common";
-  const closure = section === "all" || params.get("closure") === "1";
+  const closure = overview || section === "all" || params.get("closure") === "1";
   const historyPage = Math.max(
     1,
     Math.min(100000, parseInt(params.get("historyPage") || "1", 10) || 1),
@@ -38,6 +39,7 @@ export async function readOrderDetail(
     Math.min(100000, parseInt(params.get("cashPage") || "1", 10) || 1),
   );
   const canReadFinance = hasPermission(user, "finance.read");
+  const canWriteFinance = hasPermission(user, "finance.write");
   const canReadMaterials = hasPermission(user, "materials.read");
   const [
     applicants,
@@ -51,6 +53,7 @@ export async function readOrderDetail(
     totals,
     tasks,
     assignableUsers,
+    availableCurrencies,
     closureCheck,
     closureHistory,
   ] = await Promise.all([
@@ -108,7 +111,9 @@ export async function readOrderDetail(
           )
           .bind(id, (historyPage - 1) * 50)
           .all()
-      : Promise.resolve({ results: [] }),
+      : overview
+        ? db.prepare("SELECT * FROM order_progress WHERE order_id=? AND follow_up_date IS NOT NULL AND follow_up_done=0 ORDER BY follow_up_date,created_at DESC,id DESC LIMIT 1").bind(id).all()
+        : Promise.resolve({ results: [] }),
     canReadFinance && finance
       ? db
           .prepare(
@@ -147,8 +152,11 @@ export async function readOrderDetail(
           )
           .all()
       : Promise.resolve({ results: [] }),
+    canWriteFinance && finance
+      ? db.prepare("SELECT currency,name,rate_per_usd_scaled,rate_per_usd_scaled/100000000.0 AS rate_per_usd FROM exchange_rates WHERE active=1 ORDER BY CASE WHEN currency='USD' THEN 0 ELSE 1 END,currency").all()
+      : Promise.resolve({ results: [] }),
     closure ? getOrderClosureCheck(db, id) : Promise.resolve(null),
-    closure
+    closure && !overview
       ? db
           .prepare(
             `SELECT e.*,u.display_name AS actor_name,u.username AS actor_username
@@ -164,8 +172,8 @@ export async function readOrderDetail(
   const visibleClosureCheck = closureCheck
     ? {
         incompleteRequiredSteps: closureCheck.incompleteRequiredSteps,
-        missingRequiredMaterials: closureCheck.missingRequiredMaterials,
-        openTasks: closureCheck.openTasks,
+        ...(!overview || canReadMaterials ? { missingRequiredMaterials: closureCheck.missingRequiredMaterials } : {}),
+        ...(!overview || hasPermission(user, "tasks.read") ? { openTasks: closureCheck.openTasks } : {}),
         openFollowUps: closureCheck.openFollowUps,
         ...(canReadFinance
           ? {
@@ -193,6 +201,7 @@ export async function readOrderDetail(
     cashHasMore: cashEntries.results.length > 50,
     tasks: tasks.results,
     assignableUsers: assignableUsers.results,
+    ...(canWriteFinance && finance ? { availableCurrencies: availableCurrencies.results } : {}),
     closureCheck: visibleClosureCheck,
     closureHistory: closureHistory.results,
     ...(canReadFinance

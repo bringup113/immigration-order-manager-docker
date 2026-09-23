@@ -20,27 +20,9 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/amount";
-
-type ReminderType = "RECEIPT" | "PAYMENT" | "STEP" | "FOLLOW_UP" | "MATERIAL" | "TASK";
-
-type Dashboard = {
-  activeOrders: number;
-  receivableMinor: number;
-  payableMinor: number;
-  balanceMinor: number;
-  reminders: {
-    source: string;
-    reminder_type: ReminderType;
-    target_tab: "workflow" | "finance" | "people" | "common";
-    due_date: string;
-    order_no: string;
-    title: string;
-    project_name: string;
-    main_applicant: string | null;
-  }[];
-  trend: { month: string; income_minor: number; expense_minor: number }[];
-  access: { orders: boolean; finance: boolean; materials: boolean; tasks: boolean; ordersWrite: boolean };
-};
+import { fetchApiJson } from "@/lib/api-client";
+import type { Dashboard, ReminderType } from "@/lib/dashboard-contracts";
+import { orderDetailHref } from "@/lib/order-navigation";
 
 const reminderAppearance: Record<ReminderType, { icon: LucideIcon; tone: string }> = {
   RECEIPT: { icon: CircleDollarSign, tone: "bg-[#fff5dc] text-[#b7791f]" },
@@ -56,13 +38,11 @@ export default function Home() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/data/dashboard", { cache: "no-store" })
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "读取失败");
-        setData(result);
-      })
-      .catch((reason) => setError(reason.message));
+    fetchApiJson<Dashboard>("/api/data/dashboard", { cache: "no-store" })
+      .then(setData)
+      .catch((reason) =>
+        setError(reason instanceof Error ? reason.message : "读取失败"),
+      );
   }, []);
 
   return (
@@ -117,7 +97,7 @@ export default function Home() {
                 const ReminderIcon = appearance.icon;
                 const overdue = new Date(`${item.due_date}T23:59:59`) < new Date();
                 return <Link
-                  href={`/orders/${encodeURIComponent(item.order_no)}?tab=${item.target_tab}`}
+                  href={orderDetailHref(item.order_no, item.target_tab)}
                   key={`${item.order_no}-${item.source}-${index}`}
                   className="todo-row group transition-colors hover:border-teal-200 hover:bg-teal-50/30"
                 >

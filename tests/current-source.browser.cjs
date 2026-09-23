@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Standalone CommonJS runner supports external Playwright. */
 const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 
 const base = (process.env.MIGRA_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
-const username = process.env.MIGRA_TEST_USERNAME;
-const password = process.env.MIGRA_TEST_PASSWORD;
+const credentialText = process.env.MIGRA_TEST_CREDENTIAL_FILE
+  ? readFileSync(process.env.MIGRA_TEST_CREDENTIAL_FILE, "utf8") : "";
+const username = process.env.MIGRA_TEST_USERNAME || credentialText.match(/^账号：(.+)$/m)?.[1];
+const password = process.env.MIGRA_TEST_PASSWORD || credentialText.match(/^密码：(.+)$/m)?.[1];
 
 if (!username || !password) {
   throw new Error("Set MIGRA_TEST_USERNAME and MIGRA_TEST_PASSWORD");
@@ -129,6 +132,23 @@ async function choose(page, trigger, optionName) {
     await page.waitForURL(/\/orders\/[^/?]+$/);
     await page.getByText("主申请人：浏览器仅姓名申请人", { exact: true }).waitFor();
     console.log("PASS name-only applicant creates an order without a passport upload");
+
+    const deepLink = `${base}/orders/CI-FIXTURE-2026091501?tab=finance`;
+    await page.goto(deepLink);
+    await page.getByRole("tab", { name: "订单收支" }).waitFor();
+    await page.context().clearCookies();
+    await page.evaluate(() => window.dispatchEvent(new Event("migra-user-changed")));
+    await page.waitForURL((url) => url.pathname === "/api/auth/login");
+    assert.equal(new URL(page.url()).searchParams.get("return_to"), "/orders/CI-FIXTURE-2026091501?tab=finance");
+    await page.locator("#username").fill(username);
+    await page.locator("#password").fill(password);
+    await page.getByRole("button", { name: "进入系统" }).click();
+    await page.waitForURL(deepLink);
+    assert.equal(
+      await page.getByRole("tab", { name: "订单收支" }).getAttribute("data-state"),
+      "active",
+    );
+    console.log("PASS session expiry and login preserve the order module deep link");
 
     assert.deepEqual(pageErrors, []);
     console.log("PASS current-source browser flow has no page errors");

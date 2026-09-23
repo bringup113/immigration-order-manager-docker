@@ -14,8 +14,8 @@ import type {
 } from "@/components/order-detail-types";
 import {
   calculateCashValues,
-  minorInput,
-  rateInput,
+  defaultCashRate,
+  withCashCalculation,
   type CashCalculatedField,
 } from "@/lib/cash-calculation";
 
@@ -66,23 +66,7 @@ export function useOrderFinanceActions({
   });
 
   function rateFor(currency: string) {
-    return String(
-      currencies.find((item) => item.currency === currency)?.rate_per_usd ||
-        (currency === "USD" ? 1 : ""),
-    );
-  }
-
-  function withCashCalculation(next: CashDraft) {
-    const calculated = calculateCashValues(next);
-    if (!calculated) return { ...next, [next.calculatedField]: "" };
-    if (next.calculatedField === "amount")
-      return { ...next, amount: minorInput(calculated.amountMinor) };
-    if (next.calculatedField === "baseAmount")
-      return {
-        ...next,
-        baseAmount: minorInput(calculated.baseAmountMinor),
-      };
-    return { ...next, ratePerUsd: rateInput(calculated.rateScaled) };
+    return defaultCashRate(currency, currencies);
   }
 
   function changeCashValue(

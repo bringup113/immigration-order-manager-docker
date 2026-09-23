@@ -4,13 +4,10 @@ import { writeAudit } from "@/lib/audit";
 import { dockerSessionCookieName, isDockerDeployment, revokeDockerSession } from "@/lib/docker-auth";
 import { isAllowedMutationOrigin } from "@/lib/api-auth";
 import { getDatabase } from "@/db/database";
-
-function safeReturnTo(value: string | null) {
-  return value && value.startsWith("/") && !value.startsWith("//") && !/[\\\x00-\x20]/.test(value) ? value : "/";
-}
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 async function logout(request: NextRequest) {
-  const returnTo = safeReturnTo(request.nextUrl.searchParams.get("return_to"));
+  const returnTo = safeReturnPath(request.nextUrl.searchParams.get("return_to"));
   if (!isDockerDeployment()) {
     return NextResponse.redirect(new URL(`/signout-with-chatgpt?return_to=${encodeURIComponent(returnTo)}`, request.url));
   }

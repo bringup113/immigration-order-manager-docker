@@ -80,7 +80,8 @@ function findMrzLines(value: unknown, depth = 0, seen = new Set<object>()): stri
 
 export async function recognizePassportFile(file: File): Promise<PassportMrzCapture> {
   const isPdf=file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-  if (!isPdf && !file.type.startsWith("image/")) throw new Error("自动识别支持 PDF、JPG、JPEG、PNG 和 WEBP。");
+  const isImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+  if (!isPdf && !isImage) throw new Error("自动识别支持 PDF、JPG、JPEG、PNG 和 WEBP。");
   const { parse: parseMrz } = await import("mrz");
   const isoDate = (value: unknown) => {
     const text = String(value || "").trim();

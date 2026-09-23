@@ -2,9 +2,24 @@
 
 import Link from "next/link";
 import { Plus, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/data-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +34,10 @@ import {
 import { formatMoney } from "@/lib/amount";
 import { useApiPage } from "@/lib/use-api";
 import { usePermissions } from "@/lib/use-permissions";
-import { orderSortOptions } from "@/lib/order-sort";
+import {
+  DEFAULT_ORDER_SORT,
+  orderSortOptions,
+} from "@/lib/order-sort";
 
 type Order = {
   id: string;
@@ -53,34 +71,75 @@ const statusLabel: Record<string, string> = {
 
 function localToday() {
   const value = new Date();
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+
+  return `${value.getFullYear()}-${String(
+    value.getMonth() + 1,
+  ).padStart(2, "0")}-${String(value.getDate()).padStart(
+    2,
+    "0",
+  )}`;
+}
+
+function readPage(value: string | null) {
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return 1;
+  }
+
+  return parsed;
+}
+
+function readSort(value: string | null) {
+  if (
+    value &&
+    orderSortOptions.some((option) => option.value === value)
+  ) {
+    return value;
+  }
+
+  return DEFAULT_ORDER_SORT;
 }
 
 function CurrentStep({ order }: { order: Order }) {
   if (!order.current_step) {
     return (
       <div>
-        <b>{order.total_steps ? "办理流程已结束" : "尚未设置流程"}</b>
+        <b>
+          {order.total_steps
+            ? "办理流程已结束"
+            : "尚未设置流程"}
+        </b>
+
         <p className="mt-1 text-xs text-slate-400">
-          {order.total_steps ? "所有步骤均已处理" : "可在订单详情中增加步骤"}
+          {order.total_steps
+            ? "所有步骤均已处理"
+            : "可在订单详情中增加步骤"}
         </p>
       </div>
     );
   }
+
   const active = order.current_step_status === "IN_PROGRESS";
+
   const extra =
     active && order.in_progress_steps > 1
       ? `等 ${order.in_progress_steps} 项进行中`
       : active
         ? "进行中"
         : "下一步";
+
   return (
     <div className="max-w-xs">
       <b>{order.current_step}</b>
+
       <p
-        className={`mt-1 text-xs ${active ? "text-blue-600" : "text-slate-500"}`}
+        className={`mt-1 text-xs ${
+          active ? "text-blue-600" : "text-slate-500"
+        }`}
       >
         {extra}
+
         {order.current_step_due_date
           ? ` · 预计 ${order.current_step_due_date}`
           : " · 未设日期"}
@@ -90,50 +149,215 @@ function CurrentStep({ order }: { order: Order }) {
 }
 
 function PendingFollowUp({ order }: { order: Order }) {
-  if (!order.pending_follow_up || !order.pending_follow_up_date)
-    return <span className="text-xs text-slate-400">暂无待跟进</span>;
+  if (
+    !order.pending_follow_up ||
+    !order.pending_follow_up_date
+  ) {
+    return (
+      <span className="text-xs text-slate-400">
+        暂无待跟进
+      </span>
+    );
+  }
+
   const today = localToday();
   const overdue = order.pending_follow_up_date < today;
   const dueToday = order.pending_follow_up_date === today;
+
   return (
     <div className="max-w-xs">
-      <b className={overdue ? "text-rose-700" : "text-slate-700"}>
+      <b
+        className={
+          overdue ? "text-rose-700" : "text-slate-700"
+        }
+      >
         {order.pending_follow_up}
       </b>
+
       <p
-        className={`mt-1 text-xs ${overdue ? "text-rose-600" : dueToday ? "text-amber-600" : "text-teal-700"}`}
+        className={`mt-1 text-xs ${
+          overdue
+            ? "text-rose-600"
+            : dueToday
+              ? "text-amber-600"
+              : "text-teal-700"
+        }`}
       >
-        {overdue ? "已逾期" : dueToday ? "今天跟进" : "计划跟进"} ·{" "}
-        {order.pending_follow_up_date}
+        {overdue
+          ? "已逾期"
+          : dueToday
+            ? "今天跟进"
+            : "计划跟进"}{" "}
+        · {order.pending_follow_up_date}
       </p>
     </div>
   );
 }
 
 export default function OrdersPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <OrdersPageContent />
+    </Suspense>
+  );
+}
+
+function OrdersPageContent() {
   const can = usePermissions();
-  const [query, setQuery] = useState("");
-  const [search, setSearch] = useState("");
-  const [owner, setOwner] = useState("ALL");
-  const [sort, setSort] = useState("signed_desc");
-  const [page, setPage] = useState(1);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  /*
+   * 订单列表状态直接从 URL 初始化。
+   *
+   * 这样无论：
+   * - 从订单详情返回
+   * - 浏览器刷新
+   * - 浏览器前进/后退
+   *
+   * 都能够恢复当前分页与筛选条件。
+   */
+  const initialSearch = searchParams.get("q") || "";
+
+  const [query, setQuery] = useState(initialSearch);
+  const [search, setSearch] = useState(initialSearch);
+  const [owner, setOwner] = useState(
+    searchParams.get("owner") || "ALL",
+  );
+  const [sort, setSort] = useState(
+    readSort(searchParams.get("sort")),
+  );
+  const [page, setPage] = useState(
+    readPage(searchParams.get("page")),
+  );
+
+  /*
+   * 首次进入页面时不要执行“搜索内容变化 → 回第一页”。
+   *
+   * 否则从：
+   *
+   * /orders?page=5&q=王小明
+   *
+   * 返回以后会因为初始化 query 而再次被重置到第 1 页。
+   */
+  const firstQueryEffect = useRef(true);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
+    if (firstQueryEffect.current) {
+      firstQueryEffect.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
       setSearch(query);
       setPage(1);
     }, 300);
-    return () => clearTimeout(timer);
+
+    return () => window.clearTimeout(timer);
   }, [query]);
-  const params = new URLSearchParams({
-    page: String(page),
-    pageSize: "10",
-    q: search,
-    sort,
-    ...(owner === "ALL" ? {} : { owner }),
-  });
-  const { rows, loading, error, hasMore, owners, totalPages, total } = useApiPage<Order>(
-    `orders?${params}`,
-  );
+
+  /*
+   * URL 中保存真正的列表状态。
+   *
+   * page   当前页
+   * q      搜索词
+   * sort   排序
+   * owner  负责人
+   */
+  const listParams = useMemo(() => {
+    const params = new URLSearchParams();
+
+    params.set("page", String(page));
+    params.set("sort", sort);
+
+    if (search) {
+      params.set("q", search);
+    }
+
+    if (owner !== "ALL") {
+      params.set("owner", owner);
+    }
+
+    return params;
+  }, [page, search, sort, owner]);
+
+  const listQuery = listParams.toString();
+
+  const listHref = listQuery
+    ? `${pathname}?${listQuery}`
+    : pathname;
+
+  /*
+   * 当前列表状态同步到浏览器地址栏。
+   *
+   * 使用 replace 而不是 push，
+   * 避免翻页、排序时产生大量浏览器历史记录。
+   */
+  useEffect(() => {
+    const currentQuery = searchParams.toString();
+
+    if (currentQuery !== listQuery) {
+      router.replace(listHref, {
+        scroll: false,
+      });
+    }
+  }, [
+    listHref,
+    listQuery,
+    router,
+    searchParams,
+  ]);
+
+  /*
+   * API 查询参数。
+   *
+   * URL 保存的是页面状态；
+   * API 另外固定 pageSize=10。
+   */
+  const apiParams = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: "10",
+      q: search,
+      sort,
+      ...(owner === "ALL" ? {} : { owner }),
+    });
+
+    return params;
+  }, [page, search, sort, owner]);
+
+  const {
+    rows,
+    loading,
+    error,
+    hasMore,
+    owners,
+    totalPages,
+    total,
+  } = useApiPage<Order>(`orders?${apiParams}`);
+
+  /*
+   * 极端情况下：
+   *
+   * 原本在第 6 页，
+   * 其他用户删除订单后只剩 5 页，
+   *
+   * 自动回到最后一个有效页面。
+   */
+  useEffect(() => {
+    if (
+      !loading &&
+      totalPages > 0 &&
+      page > totalPages
+    ) {
+      // The valid upper bound comes from the server response, so it cannot be
+      // derived before this request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPage(totalPages);
+    }
+  }, [loading, page, totalPages]);
+
   const visible = rows;
 
   return (
@@ -144,204 +368,308 @@ export default function OrdersPage() {
         description="直接查看每张订单当前办到哪里、下一次需要跟进什么"
         action={
           can("orders.write") ? (
-            <Button asChild className="bg-[#0f766e]">
+            <Button
+              asChild
+              className="bg-[#0f766e]"
+            >
               <Link href="/orders/new">
-                <Plus size={16} /> 新增订单
+                <Plus size={16} />
+                新增订单
               </Link>
             </Button>
           ) : undefined
         }
       />
+
       <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         <b>列表只展示当前状态：</b>
         完整流程、历史跟进、材料与收付款记录都保留在订单详情中。
       </div>
+
       {error && <ErrorState message={error} />}
-      {
-        <section className="panel overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b p-5">
-            <div className="relative max-w-sm flex-1">
-              <Search
-                size={17}
-                className="absolute left-3 top-2.5 text-slate-400"
-              />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索订单、代理、项目、负责人、办理或跟进"
-                className="h-10 bg-slate-50 pl-9"
-              />
-            </div>
+
+      <section className="panel overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b p-5">
+          <div className="relative max-w-sm flex-1">
+            <Search
+              size={17}
+              className="absolute left-3 top-2.5 text-slate-400"
+            />
+
+            <Input
+              value={query}
+              onChange={(event) =>
+                setQuery(event.target.value)
+              }
+              placeholder="搜索订单、代理、项目、负责人、办理或跟进"
+              className="h-10 bg-slate-50 pl-9"
+            />
+          </div>
+
+          <Select
+            value={sort}
+            onValueChange={(value) => {
+              setSort(value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger
+              className="w-[210px]"
+              aria-label="订单排序"
+            >
+              <SelectValue />
+            </SelectTrigger>
+
+            <SelectContent>
+              {orderSortOptions.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {owners.length > 1 && (
             <Select
-              value={sort}
+              value={owner}
               onValueChange={(value) => {
-                setSort(value);
+                setOwner(value);
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[210px]" aria-label="订单排序">
-                <SelectValue />
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="全部负责人" />
               </SelectTrigger>
+
               <SelectContent>
-                {orderSortOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                <SelectItem value="ALL">
+                  全部负责人
+                </SelectItem>
+
+                {owners.map((item) => (
+                  <SelectItem
+                    key={item.id}
+                    value={item.id}
+                  >
+                    {item.name} ({item.username})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {owners.length > 1 && (
-              <Select
-                value={owner}
-                onValueChange={(value) => {
-                  setOwner(value);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="全部负责人" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">全部负责人</SelectItem>
-                  {owners.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name} ({item.username})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Badge variant="outline" className="ml-auto">
-              总计：{total} 张订单
-            </Badge>
-          </div>
-          {loading && <LoadingState />}
-          {!loading && rows.length === 0 && (
-            <EmptyState
-              title="没有符合条件的订单"
-              description="请调整筛选条件或新增订单。"
-            />
           )}
-          <div className="overflow-x-auto">
-            <table
-              className={`w-full text-sm ${can("finance.read") ? "min-w-[1480px]" : "min-w-[1000px]"}`}
-            >
-              <thead>
-                <tr className="table-head">
-                  <th>订单 / 代理</th>
-                  <th>项目 / 主申请人</th>
-                  <th>当前办理</th>
-                  <th>待跟进</th>
-                  <th>订单状态</th>
-                  {can("finance.read") && (
-                    <>
-                      <th>订单收款（USD）</th>
-                      <th>订单付款（USD）</th>
-                      <th>订单利润（USD）</th>
-                    </>
-                  )}
-                  <th>负责人</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((row) => {
-                  const profit =
-                    Number(row.received_base_minor) -
-                    Number(row.paid_base_minor);
-                  const expectedProfit =
-                    Number(row.receivable_base_minor) -
-                    Number(row.payable_base_minor);
-                  return (
-                    <tr className="table-row" key={row.id}>
-                      <td>
-                        <Link
-                          href={`/orders/${row.order_no}`}
-                          className="font-semibold text-slate-800 hover:text-teal-700"
-                        >
-                          {row.order_no}
-                        </Link>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {row.agent_name}
-                        </p>
-                      </td>
-                      <td>
-                        <b>{row.project_name}</b>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {row.main_applicant || "未填写"}
-                        </p>
-                      </td>
-                      <td>
-                        <CurrentStep order={row} />
-                      </td>
-                      <td>
-                        <PendingFollowUp order={row} />
-                      </td>
-                      <td>
-                        <Badge
-                          variant="outline"
-                          className={`status ${row.status === "ACTIVE" ? "blue" : row.status === "COMPLETED" ? "green" : "amber"}`}
-                        >
-                          {statusLabel[row.status] || row.status}
-                        </Badge>
-                      </td>
-                      {can("finance.read") && (
-                        <>
-                          <td>
-                            <MoneyPair
-                              firstLabel="应收"
-                              firstValue={row.receivable_base_minor}
-                              secondLabel="实收"
-                              secondValue={row.received_base_minor}
-                            />
-                          </td>
-                          <td>
-                            <MoneyPair
-                              firstLabel="应付"
-                              firstValue={row.payable_base_minor}
-                              secondLabel="实付"
-                              secondValue={row.paid_base_minor}
-                            />
-                          </td>
-                          <td>
-                            <MoneyPair
-                              firstLabel="预计"
-                              firstValue={expectedProfit}
-                              secondLabel={
-                                row.status === "COMPLETED" ? "实际" : "当前"
-                              }
-                              secondValue={profit}
-                            />
-                          </td>
-                        </>
-                      )}
-                      <td>
-                        <b>{row.owner_name}</b>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-end gap-3 border-t p-4">
-            <Button
-              variant="outline"
-              disabled={loading || page === 1}
-              onClick={() => setPage(page - 1)}
-            >
-              上一页
-            </Button>
-            <span className="text-sm">第 {page} / {totalPages} 页</span>
-            <Button
-              variant="outline"
-              disabled={loading || !hasMore}
-              onClick={() => setPage(page + 1)}
-            >
-              下一页
-            </Button>
-          </div>
-        </section>
-      }
+
+          <Badge
+            variant="outline"
+            className="ml-auto"
+          >
+            总计：{total} 张订单
+          </Badge>
+        </div>
+
+        {loading && <LoadingState />}
+
+        {!loading && rows.length === 0 && (
+          <EmptyState
+            title="没有符合条件的订单"
+            description="请调整筛选条件或新增订单。"
+          />
+        )}
+
+        <div className="overflow-x-auto">
+          <table
+            className={`w-full text-sm ${
+              can("finance.read")
+                ? "min-w-[1480px]"
+                : "min-w-[1000px]"
+            }`}
+          >
+            <thead>
+              <tr className="table-head">
+                <th>订单 / 代理</th>
+                <th>项目 / 主申请人</th>
+                <th>当前办理</th>
+                <th>待跟进</th>
+                <th>订单状态</th>
+
+                {can("finance.read") && (
+                  <>
+                    <th>订单收款（USD）</th>
+                    <th>订单付款（USD）</th>
+                    <th>订单利润（USD）</th>
+                  </>
+                )}
+
+                <th>负责人</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {visible.map((row) => {
+                const profit =
+                  Number(row.received_base_minor) -
+                  Number(row.paid_base_minor);
+
+                const expectedProfit =
+                  Number(row.receivable_base_minor) -
+                  Number(row.payable_base_minor);
+
+                /*
+                 * 进入订单详情时，把当前完整列表地址带过去。
+                 *
+                 * 例如：
+                 *
+                 * /orders?page=5&q=王小明&sort=signed_desc
+                 *
+                 * 会作为 returnTo 保存。
+                 */
+                const detailHref =
+                  `/orders/${encodeURIComponent(
+                    row.order_no,
+                  )}?returnTo=${encodeURIComponent(
+                    listHref,
+                  )}`;
+
+                return (
+                  <tr
+                    className="table-row"
+                    key={row.id}
+                  >
+                    <td>
+                      <Link
+                        href={detailHref}
+                        className="font-semibold text-slate-800 hover:text-teal-700"
+                      >
+                        {row.order_no}
+                      </Link>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        {row.agent_name}
+                      </p>
+                    </td>
+
+                    <td>
+                      <b>{row.project_name}</b>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        {row.main_applicant ||
+                          "未填写"}
+                      </p>
+                    </td>
+
+                    <td>
+                      <CurrentStep order={row} />
+                    </td>
+
+                    <td>
+                      <PendingFollowUp
+                        order={row}
+                      />
+                    </td>
+
+                    <td>
+                      <Badge
+                        variant="outline"
+                        className={`status ${
+                          row.status === "ACTIVE"
+                            ? "blue"
+                            : row.status ===
+                                "COMPLETED"
+                              ? "green"
+                              : "amber"
+                        }`}
+                      >
+                        {statusLabel[row.status] ||
+                          row.status}
+                      </Badge>
+                    </td>
+
+                    {can("finance.read") && (
+                      <>
+                        <td>
+                          <MoneyPair
+                            firstLabel="应收"
+                            firstValue={
+                              row.receivable_base_minor
+                            }
+                            secondLabel="实收"
+                            secondValue={
+                              row.received_base_minor
+                            }
+                          />
+                        </td>
+
+                        <td>
+                          <MoneyPair
+                            firstLabel="应付"
+                            firstValue={
+                              row.payable_base_minor
+                            }
+                            secondLabel="实付"
+                            secondValue={
+                              row.paid_base_minor
+                            }
+                          />
+                        </td>
+
+                        <td>
+                          <MoneyPair
+                            firstLabel="预计"
+                            firstValue={
+                              expectedProfit
+                            }
+                            secondLabel={
+                              row.status ===
+                              "COMPLETED"
+                                ? "实际"
+                                : "当前"
+                            }
+                            secondValue={profit}
+                          />
+                        </td>
+                      </>
+                    )}
+
+                    <td>
+                      <b>{row.owner_name}</b>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t p-4">
+          <Button
+            variant="outline"
+            disabled={loading || page === 1}
+            onClick={() =>
+              setPage((current) =>
+                Math.max(1, current - 1),
+              )
+            }
+          >
+            上一页
+          </Button>
+
+          <span className="text-sm">
+            第 {page} / {totalPages} 页
+          </span>
+
+          <Button
+            variant="outline"
+            disabled={loading || !hasMore}
+            onClick={() =>
+              setPage((current) => current + 1)
+            }
+          >
+            下一页
+          </Button>
+        </div>
+      </section>
     </AppShell>
   );
 }
@@ -360,12 +688,21 @@ function MoneyPair({
   return (
     <div className="space-y-1 whitespace-nowrap">
       <p>
-        <span className="mr-2 text-xs text-slate-400">{firstLabel}</span>
+        <span className="mr-2 text-xs text-slate-400">
+          {firstLabel}
+        </span>
+
         <b>{formatMoney("USD", firstValue)}</b>
       </p>
+
       <p>
-        <span className="mr-2 text-xs text-slate-400">{secondLabel}</span>
-        <span>{formatMoney("USD", secondValue)}</span>
+        <span className="mr-2 text-xs text-slate-400">
+          {secondLabel}
+        </span>
+
+        <span>
+          {formatMoney("USD", secondValue)}
+        </span>
       </p>
     </div>
   );

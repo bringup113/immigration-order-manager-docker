@@ -4,8 +4,16 @@ import { hasPermission } from "@/lib/docker-auth";
 import { orderScopeFilter } from "@/lib/order-access";
 import { likePattern, searchTerms } from "@/lib/order-search";
 import { orderSortSql } from "@/lib/order-sort";
+import type {
+  OrderListOwner,
+  OrderListRow,
+  PageResponse,
+} from "@/lib/api-contracts";
 
-export async function listOrders(user: ChatGPTUser, params: URLSearchParams) {
+export async function listOrders(
+  user: ChatGPTUser,
+  params: URLSearchParams,
+): Promise<PageResponse<OrderListRow>> {
   const db = getDatabase();
   const sortSql = orderSortSql(params.get("sort"));
   const scope = orderScopeFilter(user, "o");
@@ -32,7 +40,7 @@ const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const rows = await db.prepare(`WITH page AS MATERIALIZED (
       SELECT o.* FROM orders o WHERE ${filters.join(" AND ")} ORDER BY ${sortSql} LIMIT ? OFFSET ?
-    ) SELECT o.id,o.order_no,o.status,o.owner_user_id,o.created_at,c.name AS agent_name,
+    ) SELECT o.id,o.order_no,o.status,o.owner_user_id,o.created_at,o.signed_at,c.name AS agent_name,
       u.display_name AS owner_name,u.username AS owner_username,o.project_name_snapshot AS project_name,o.country_snapshot AS country,
       (SELECT name FROM order_applicants a WHERE a.order_id=o.id AND a.applicant_type='MAIN' LIMIT 1) AS main_applicant,
       step.name AS current_step,step.status AS current_step_status,step.due_date AS current_step_due_date,
@@ -45,7 +53,7 @@ const totalPages = Math.max(1, Math.ceil(total / pageSize));
       LEFT JOIN LATERAL (SELECT COALESCE(NULLIF(g.next_action,''),g.title) AS title,g.follow_up_date FROM order_progress g WHERE g.order_id=o.id AND g.follow_up_done=0 AND g.follow_up_date IS NOT NULL ORDER BY g.follow_up_date,g.created_at DESC LIMIT 1) follow ON TRUE
       ${finance ? `LEFT JOIN LATERAL (SELECT COALESCE(SUM(planned_base_minor) FILTER(WHERE plan_type='RECEIVABLE'),0) AS receivable_base_minor,COALESCE(SUM(planned_base_minor) FILTER(WHERE plan_type='PAYABLE'),0) AS payable_base_minor FROM order_plans WHERE order_id=o.id) plans ON TRUE
       LEFT JOIN LATERAL (SELECT COALESCE(SUM(base_amount_minor) FILTER(WHERE direction='RECEIPT'),0) AS received_base_minor,COALESCE(SUM(base_amount_minor) FILTER(WHERE direction='PAYMENT'),0) AS paid_base_minor FROM order_cash_entries WHERE order_id=o.id AND status='ACTIVE') cash ON TRUE` : ""}
-      ORDER BY ${sortSql}`).bind(...values,pageSize+1,(page-1)*pageSize).all();
-  const owners = await db.prepare(`SELECT u.id,u.display_name AS name,u.username FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.owner_user_id=u.id AND ${scope.sql}) ORDER BY u.display_name,u.id`).bind(...scope.values).all();
+      ORDER BY ${sortSql}`).bind(...values,pageSize+1,(page-1)*pageSize).all<OrderListRow>();
+  const owners = await db.prepare(`SELECT u.id,u.display_name AS name,u.username FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.owner_user_id=u.id AND ${scope.sql}) ORDER BY u.display_name,u.id`).bind(...scope.values).all<OrderListOwner>();
   return { rows: rows.results.slice(0,pageSize),page,pageSize,total,totalPages,hasMore: rows.results.length>pageSize,owners: owners.results };
 }

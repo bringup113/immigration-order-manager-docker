@@ -1,12 +1,14 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Standalone CommonJS runner supports external Playwright. */
+const {readFileSync}=require('node:fs');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base=(process.env.MIGRA_BASE_URL || 'http://localhost:3000').replace(/\/$/,'');
+const credentialText=process.env.MIGRA_TEST_CREDENTIAL_FILE?readFileSync(process.env.MIGRA_TEST_CREDENTIAL_FILE,'utf8'):'';
 (async()=>{
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || undefined,headless:true});
 try{
 const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto(base+'/api/auth/login');
-const username=process.env.MIGRA_TEST_USERNAME,password=process.env.MIGRA_TEST_PASSWORD;if(!username||!password)throw Error('Set MIGRA_TEST_USERNAME and MIGRA_TEST_PASSWORD');
+const username=process.env.MIGRA_TEST_USERNAME||credentialText.match(/^账号：(.+)$/m)?.[1],password=process.env.MIGRA_TEST_PASSWORD||credentialText.match(/^密码：(.+)$/m)?.[1];if(!username||!password)throw Error('Set isolated browser-test credentials');
 await page.locator('#username').fill(username);await page.locator('#password').fill(password);await page.getByRole('button',{name:'进入系统'}).click();await page.waitForURL(base+'/');
 await page.goto(base+'/settings/system');await page.getByText('当前进程',{exact:false}).waitFor();
 await page.clock.install();

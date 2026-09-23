@@ -15,6 +15,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Smartphone,
   ScrollText,
   UserRoundCog,
   UsersRound,
@@ -29,6 +30,10 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import type { GlobalSearchResponse } from "@/lib/api-contracts";
+import { fetchApiJson, isAbortError } from "@/lib/api-client";
+import { orderDetailHref } from "@/lib/order-navigation";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 const nav = [
   {
@@ -63,26 +68,16 @@ const nav = [
   },
 ];
 
-type SearchData = {
-  indexing?: boolean;
-  orders: {
-    order_no: string;
-    agent_name: string;
-    project_name: string;
-    main_applicant: string | null;
-    match_summary?: string;
-    target_tab?: string;
-  }[];
-  projects: { id: string; code: string; name: string; country: string }[];
-  agents: {
-    id: string;
-    name: string;
-    contact_name: string | null;
-    phone: string | null;
-  }[];
+const emptySearch: GlobalSearchResponse = {
+  orders: [],
+  projects: [],
+  agents: [],
+  pagination: {
+    orders: { page: 1, pageSize: 12, hasMore: false, loaded: true },
+    projects: { page: 1, pageSize: 8, hasMore: false, loaded: true },
+    agents: { page: 1, pageSize: 8, hasMore: false, loaded: true },
+  },
 };
-
-const emptySearch: SearchData = { orders: [], projects: [], agents: [] };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -91,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchData, setSearchData] = useState<SearchData>(emptySearch);
+  const [searchData, setSearchData] = useState<GlobalSearchResponse>(emptySearch);
   const [searchNotice, setSearchNotice] = useState("");
   const [selectedResult, setSelectedResult] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -114,10 +109,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [searchData]);
   const { user: currentUser } = useCurrentUser();
   useEffect(() => {
-    if (currentUser.mustChangePassword && pathname !== "/settings/profile")
-      router.replace("/settings/profile?required=1");
-    else if (currentUser.mfaRequired && pathname !== "/settings/profile")
-      router.replace("/settings/profile?mfa_required=1");
+    if (pathname === "/settings/profile") return;
+    const returnTo = safeReturnPath(
+      `${window.location.pathname}${window.location.search}`,
+    );
+    if (currentUser.mustChangePassword)
+      router.replace(
+        `/settings/profile?required=1&return_to=${encodeURIComponent(returnTo)}`,
+      );
+    else if (currentUser.mfaRequired)
+      router.replace(
+        `/settings/profile?mfa_required=1&return_to=${encodeURIComponent(returnTo)}`,
+      );
   }, [currentUser, pathname, router]);
 
   useEffect(() => {
@@ -172,12 +175,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setSearchNotice("");
       }
       try {
-        const response = await fetch(
+        const result = await fetchApiJson<GlobalSearchResponse>(
           `/api/data/search?q=${encodeURIComponent(searchQuery)}`,
           { cache: "no-store", signal: request.signal },
         );
-        const result: SearchData & { error?: string } = await response.json();
-        if (!response.ok) throw new Error(result.error || "搜索失败");
         if (disposed || request.signal.aborted) return;
         if (!wasInitial)
           savedScroll.current = listRef.current?.scrollTop ?? null;
@@ -197,8 +198,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (Date.now() + delay < deadline)
             timer = window.setTimeout(() => void search(), delay);
         } else window.clearTimeout(deadlineTimer);
-      } catch {
-        if (!disposed && !request.signal.aborted) {
+      } catch (reason) {
+        if (!disposed && !request.signal.aborted && !isAbortError(reason)) {
           needsRefresh = false;
           window.clearTimeout(deadlineTimer);
           setSearchNotice("搜索更新失败，已保留原有结果，请稍后重新搜索。");
@@ -354,6 +355,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ShieldCheck size={18} />
             <span>登录与安全</span>
           </Link>
+          <Link href={can("dashboard.read") ? "/m" : can("orders.read") ? "/m/orders" : "/m/me"} onClick={() => setOpen(false)} className="nav-item w-full">
+            <Smartphone size={18} />
+            <span>手机版</span>
+          </Link>
           <div className="mt-3 flex items-center gap-3 rounded-xl bg-white/5 p-3">
             <span className="grid size-9 place-items-center rounded-full bg-[#d8f3ef] text-sm font-bold text-[#0f766e]">
               {currentUser?.displayName?.slice(0, 1).toUpperCase() || "M"}
@@ -368,7 +373,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   : ""}
               </p>
             </div>
-            <form method="post" action="/api/auth/logout?return_to=/">
+            <form
+              method="post"
+              action={`/api/auth/logout?return_to=${encodeURIComponent(safeReturnPath(pathname))}`}
+            >
               <button
                 type="submit"
                 className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"
@@ -422,7 +430,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
             <div className="hidden h-8 w-px bg-slate-200 sm:block" />
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold">
+              <p className="text-sm font-semibold" suppressHydrationWarning>
                 {new Intl.DateTimeFormat("zh-CN", {
                   year: "numeric",
                   month: "long",
@@ -480,9 +488,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={row.order_no}
                   value={`order-${row.order_no}`}
                   onSelect={() =>
-                    goTo(
-                      `/orders/${encodeURIComponent(row.order_no)}${row.target_tab ? `?tab=${row.target_tab}` : ""}`,
-                    )
+                    goTo(orderDetailHref(row.order_no, row.target_tab))
                   }
                 >
                   <BriefcaseBusiness />

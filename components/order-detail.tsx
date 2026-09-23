@@ -55,6 +55,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMoney } from "@/lib/amount";
+import type { OrderDetailTab } from "@/lib/api-contracts";
 import { useApiList } from "@/lib/use-api";
 import { useOrderPeopleMaterials } from "@/hooks/use-order-people-materials";
 import { useOrderWorkflowActions } from "@/hooks/use-order-workflow-actions";
@@ -66,13 +67,13 @@ const today = () => {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 };
 
-export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: string; initialTab?: string }) {
+export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: string; initialTab?: OrderDetailTab }) {
   const currencies = useApiList<CurrencyOption>("currencies");
   const [data, setData] = useState<OrderDetailData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<OrderDetailDialog>(null);
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
   const [selectedApplicantId, setSelectedApplicantId] = useState("");
   const [message, setMessage] = useState("");
   const [previewFile, setPreviewFile] = useState<Row | null>(null);

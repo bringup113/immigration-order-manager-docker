@@ -1,4 +1,5 @@
 import type { CashDirection, Row } from "@/components/order-detail-ui";
+import type { CurrencyOption } from "@/components/currency-select";
 import type { CashCalculatedField } from "@/lib/cash-calculation";
 import type { PassportIdentity, PassportMrzCapture } from "@/lib/passport-mrz";
 
@@ -93,6 +94,7 @@ export type OrderDetailData = {
   receivedBaseMinor: number;
   paidBaseMinor: number;
   balanceBaseMinor: number;
+  availableCurrencies?: CurrencyOption[];
 };
 
 export type OrderDetailDialog =

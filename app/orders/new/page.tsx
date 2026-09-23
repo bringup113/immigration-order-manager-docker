@@ -451,7 +451,14 @@ export default function NewOrderPage() {
         documentCode: item.documentCode,
         personalNumber: item.personalNumber,
       }));
-      const result = await apiPost("orders", {
+      const result = await apiPost<{
+        orderNo: string;
+        applicants: {
+          id: string;
+          passportMaterialId: string;
+          clientKey: string;
+        }[];
+      }>("orders", {
         projectId,
         agentId,
         ownerUserId,
@@ -465,11 +472,7 @@ export default function NewOrderPage() {
       createdOrderNo = String(result.orderNo || "");
       for (const item of applicants) {
         const created = (
-          result.applicants as {
-            id: string;
-            passportMaterialId: string;
-            clientKey: string;
-          }[]
+          result.applicants
         ).find((row) => row.clientKey === item.clientKey);
         if (!item.passportFile) continue;
         if (!created)

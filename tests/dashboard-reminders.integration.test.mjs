@@ -21,13 +21,18 @@ test("finance reminders follow active allocations in plan currency", {
       INSERT INTO orders VALUES ('o','TEST','Test','ACTIVE');
     `);
     const source = readFileSync(new URL("../lib/dashboard-query.ts", import.meta.url), "utf8");
-    const start = source.indexOf("SELECT CASE op.plan_type");
-    const end = source.indexOf("UNION ALL SELECT '办理流程'", start);
-    assert.ok(start > 0 && end > start);
-    const query = source.slice(start, end)
+    const marker = "const reminderSources = `";
+    const start = source.indexOf(marker) + marker.length;
+    const end = source.indexOf("`;", start);
+    assert.ok(start >= marker.length && end > start);
+    const reminderSources = source.slice(start, end)
       .replaceAll("${canReadFinance}", "TRUE")
+      .replaceAll("${canReadOrders}", "TRUE")
+      .replaceAll("${canReadMaterials}", "TRUE")
+      .replaceAll("${canReadTasks}", "TRUE")
       .replaceAll("${orderScope.sql}", "o.id='o'")
       .replaceAll("${sevenDays}", "CURRENT_DATE + 7");
+    const query = reminderSources.split("UNION ALL SELECT '办理流程'")[0];
     const visible = async () => (await db.query(query)).rows.map(row => row.title).sort();
     for (const [kind, direction] of [["RECEIVABLE", "RECEIPT"], ["PAYABLE", "PAYMENT"]]) {
       await db.query("TRUNCATE order_plans, order_cash_entries");
@@ -77,14 +82,13 @@ test("finance reminders follow active allocations in plan currency", {
       INSERT INTO order_materials VALUES ('m1','o','person','personal',CURRENT_DATE),('m2','o',NULL,'common',CURRENT_DATE);
       INSERT INTO order_tasks VALUES ('o','task',CURRENT_DATE,'OPEN');
     `);
-    const fullStart = source.indexOf("SELECT * FROM (");
-    const fullEnd = source.indexOf("LIMIT 30", fullStart) + "LIMIT 30".length;
-    const fullQuery = source.slice(fullStart, fullEnd)
-      .replaceAll("${orderScope.sql}", "o.id='o'")
-      .replaceAll("${sevenDays}", "CURRENT_DATE + 7")
-      .replace(/\$\{canRead(?:Finance|Orders|Materials|Tasks)\}/g, "TRUE");
+    const fullQuery = `SELECT * FROM (${reminderSources}) scoped_reminders ORDER BY due_date,order_no LIMIT 30`;
     const targets = Object.fromEntries((await db.query(fullQuery)).rows.map(row => [row.title, row.target_tab]));
     assert.deepEqual(targets, { plan: "finance", step: "workflow", follow: "workflow", personal: "people", common: "common", task: "workflow" });
+    await db.query("INSERT INTO order_steps SELECT 'o','extra-' || n,CURRENT_DATE-1,'PENDING' FROM generate_series(1,40) n");
+    const counts = (await db.query(`SELECT COUNT(*) FILTER (WHERE due_date<CURRENT_DATE) AS overdue,COUNT(*) FILTER (WHERE due_date=CURRENT_DATE) AS today,COUNT(*) FILTER (WHERE due_date>CURRENT_DATE) AS week FROM (${reminderSources}) scoped_reminders`)).rows[0];
+    assert.deepEqual([Number(counts.overdue), Number(counts.today), Number(counts.week)], [40, 6, 0], "counts include rows beyond the visible page");
+    assert.equal((await db.query(fullQuery)).rows.length, 30, "the reminder list remains bounded");
   } finally {
     await db.end();
   }

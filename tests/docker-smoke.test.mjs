@@ -61,7 +61,41 @@ test("Docker PostgreSQL deployment exposes authenticated business data", { skip:
   assert.equal(typeof dashboard.activeOrders, "number");
   for (const reminder of dashboard.reminders) assert.match(reminder.due_date, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(Array.isArray(orders), true);
+  for (const order of orders) assert.equal("signed_at" in order, true);
   assert.equal(Array.isArray(search.orders), true);
+  assert.equal(typeof search.pagination.orders.hasMore, "boolean");
+});
+
+test("unauthenticated page deep links survive the login redirect", { skip: !enabled }, async () => {
+  const target = "/orders/MOBILE-DEEP-LINK?tab=finance";
+  const response = await fetch(`${baseUrl}${target}`, { redirect: "manual" });
+  assert.ok([303, 307, 308].includes(response.status), `unexpected status ${response.status}`);
+  const location = new URL(response.headers.get("location"), baseUrl);
+  assert.equal(location.pathname, "/api/auth/login");
+  assert.equal(location.searchParams.get("return_to"), target);
+});
+
+test("login preserves a safe destination and rejects external return paths", { skip: !enabled }, async () => {
+  const target = "/orders/CI-FIXTURE-2026091501?tab=finance";
+  const loginPage = await fetch(`${baseUrl}/api/auth/login?return_to=${encodeURIComponent(target)}`);
+  assert.equal(loginPage.status, 200);
+  assert.match(await loginPage.text(), /name="return_to" value="\/orders\/CI-FIXTURE-2026091501\?tab=finance"/);
+
+  const valid = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    body: new URLSearchParams({ username, password, return_to: target }),
+    redirect: "manual",
+  });
+  assert.equal(valid.status, 303);
+  assert.equal(valid.headers.get("location"), target);
+
+  const external = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    body: new URLSearchParams({ username, password, return_to: "//example.com/steal" }),
+    redirect: "manual",
+  });
+  assert.equal(external.status, 303);
+  assert.equal(external.headers.get("location"), "/");
 });
 
 test("logout opens a clean login page without a stale error", { skip: !enabled }, async () => {
@@ -126,6 +160,7 @@ test("workflow transitions keep one current step, advance automatically, require
   const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
   const orderId = `test_ord_${suffix}`;
   const orderNo = `TEST-${suffix}`;
+  let readonlyId = "";
   try {
     const source = await database.query(`SELECT c.id AS agent_id,p.id AS project_id,p.code,p.name,p.country,p.revision_no
       FROM agents c CROSS JOIN projects p WHERE c.active=1 AND p.status='ACTIVE' LIMIT 1`);
@@ -147,6 +182,26 @@ test("workflow transitions keep one current step, advance automatically, require
     }
 
     const cookie = await login();
+    const readonlyUsername = `readonly_${suffix.toLowerCase()}`;
+    const readonlyPassword = `Mobile-${suffix}-ReadOnly!`;
+    const createdReadonly = await fetch(`${baseUrl}/api/admin/users`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", username: readonlyUsername, displayName: "手机只读测试", password: readonlyPassword, roleId: "role_readonly" }),
+    });
+    assert.equal(createdReadonly.status, 201, await createdReadonly.clone().text());
+    readonlyId = (await createdReadonly.json()).id;
+    await database.query("UPDATE users SET must_change_password=0 WHERE id=$1", [readonlyId]);
+    const readonlyCookie = await loginAs(readonlyUsername, readonlyPassword);
+    assert.equal((await fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}?section=workflow`, { headers: { cookie: readonlyCookie } })).status, 200);
+    for (const payload of [
+      { action: "step", stepId: `test_stp_${suffix}_1`, status: "COMPLETED", expectedVersion: 1 },
+      { action: "progress", title: "不可写入", progressDate: "2026-09-21", expectedVersion: 1 },
+    ]) {
+      const denied = await fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}`, {
+        method: "POST", headers: { cookie: readonlyCookie, "content-type": "application/json" }, body: JSON.stringify(payload),
+      });
+      assert.equal(denied.status, 403, "只读账号不得写入流程或跟进");
+    }
     const mutate = async (payload, status = 200) => {
       const response = await fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}`, {
         method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(payload),
@@ -168,16 +223,115 @@ test("workflow transitions keep one current step, advance automatically, require
     await mutate({ action: "step", stepId: `test_stp_${suffix}_3`, status: "SKIPPED", expectedVersion: detail.order.version }, 400);
     await mutate({ action: "step", stepId: `test_stp_${suffix}_3`, status: "SKIPPED", reason: "集成测试强制跳过", expectedVersion: detail.order.version });
     detail = await getJson(`/api/orders/${encodeURIComponent(orderNo)}`, cookie);
+    await mutate({ action: "progress", title: "手机端跟进测试", progressDate: "2026-09-21", details: "已联系申请人", nextAction: "等待材料", followUpDate: "2026-09-25", expectedVersion: detail.order.version });
+    detail = await getJson(`/api/orders/${encodeURIComponent(orderNo)}?section=workflow`, cookie);
+    assert.equal(detail.progress[0].title, "手机端跟进测试");
+    assert.equal(detail.progress[0].next_action, "等待材料");
     await mutate({ action: "status", status: "PAUSED", expectedVersion: detail.order.version }, 400);
     await mutate({ action: "status", status: "PAUSED", reason: "集成测试暂停", expectedVersion: detail.order.version });
 
     const checks = await database.query("SELECT action,changes_json FROM audit_logs WHERE entity_type='ORDER' AND entity_id=$1", [orderNo]);
     assert.equal(checks.rows.filter((item) => item.action === "ORDER_STEP").length >= 3, true);
     assert.equal(checks.rows.some((item) => item.action === "ORDER_STATUS"), true);
+    assert.equal(checks.rows.some((item) => item.action === "ORDER_PROGRESS"), true);
     assert.equal(checks.rows.some((item) => String(item.changes_json).includes("集成测试强制跳过")), true);
   } finally {
+    if (readonlyId) {
+      await database.query("DELETE FROM audit_logs WHERE entity_id=$1", [readonlyId]).catch(() => undefined);
+      await database.query("DELETE FROM users WHERE id=$1", [readonlyId]).catch(() => undefined);
+    }
     await database.query("DELETE FROM orders WHERE id=$1", [orderId]).catch(() => undefined);
     await database.query("DELETE FROM audit_logs WHERE entity_type='ORDER' AND entity_id=$1", [orderNo]).catch(() => undefined);
+    await database.end();
+  }
+});
+
+test("mobile cash writes keep original-currency allocation, permissions, bounds, and audits", { skip: !(enabled && databaseUrl) }, async () => {
+  const database = new pg.Client({ connectionString: databaseUrl });
+  await database.connect();
+  const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+  const orderId = `test_ord_mobile_cash_${suffix}`;
+  const orderNo = `MOBILE-CASH-${suffix}`;
+  const receiptPlanId = `test_plan_mobile_r_${suffix}`;
+  const paymentPlanId = `test_plan_mobile_p_${suffix}`;
+  let readonlyId = "";
+  const cashIds = [];
+  try {
+    const source = await database.query(`SELECT c.id AS agent_id,p.id AS project_id,p.code,p.name,p.country,p.revision_no,u.id AS owner_user_id
+      FROM agents c CROSS JOIN projects p CROSS JOIN LATERAL (SELECT id FROM users WHERE active=1 AND role_id='role_owner' ORDER BY created_at LIMIT 1) u
+      WHERE c.active=1 AND p.status='ACTIVE' LIMIT 1`);
+    assert.equal(source.rowCount, 1);
+    assert.equal((await database.query("SELECT active FROM exchange_rates WHERE currency='MYR'")).rows[0]?.active, 1);
+    const row = source.rows[0];
+    const now = new Date().toISOString();
+    await database.query(`INSERT INTO orders
+      (id,order_no,agent_id,project_id,project_code_snapshot,project_name_snapshot,country_snapshot,project_revision,status,signed_at,owner_user_id,created_at,updated_at,status_changed_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE',CURRENT_DATE,$9,$10,$10,$10)`,
+      [orderId, orderNo, row.agent_id, row.project_id, row.code, row.name, row.country, row.revision_no, row.owner_user_id, now]);
+    await database.query(`INSERT INTO order_plans
+      (id,order_id,plan_type,sequence,name,currency,planned_amount_minor,budget_rate_scaled,planned_base_minor)
+      VALUES ($1,$2,'RECEIVABLE',1,'测试应收','USD',10000,100000000,10000),
+             ($3,$2,'PAYABLE',1,'测试应付','MYR',40400,404000000,10000)`, [receiptPlanId, orderId, paymentPlanId]);
+    const cookie = await login();
+    const read = () => getJson(`/api/orders/${encodeURIComponent(orderNo)}?section=finance`, cookie);
+    const post = async (payload, expectedStatus) => {
+      const response = await fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}`, {
+        method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(payload),
+      });
+      assert.equal(response.status, expectedStatus, await response.clone().text());
+      return response;
+    };
+    let detail = await read();
+    assert.ok(detail.availableCurrencies.some((option) => option.currency === "MYR"));
+    const receipt = {
+      action: "saveCashEntry", direction: "RECEIPT", entryDate: "2026-09-22", description: "手机收款测试",
+      currency: "MYR", amount: "404", baseAmount: "100", ratePerUsd: "4.04", calculatedField: "baseAmount",
+      orderPlanId: receiptPlanId, notes: "", expectedVersion: detail.order.version,
+    };
+    cashIds.push((await (await post(receipt, 201)).json()).id);
+    detail = await read();
+    assert.equal(detail.receivedBaseMinor, 10000);
+    assert.equal(Number(detail.plans.find((plan) => plan.id === receiptPlanId).allocated_minor), 10000);
+    await post(receipt, 409);
+    assert.equal((await database.query("SELECT COUNT(*)::int AS total FROM order_cash_entries WHERE order_id=$1", [orderId])).rows[0].total, 1);
+    const payment = {
+      ...receipt, direction: "PAYMENT", description: "手机付款测试", calculatedField: "ratePerUsd",
+      orderPlanId: paymentPlanId, expectedVersion: detail.order.version,
+    };
+    cashIds.push((await (await post(payment, 201)).json()).id);
+    detail = await read();
+    assert.equal(detail.paidBaseMinor, 10000);
+    assert.equal(Number(detail.plans.find((plan) => plan.id === paymentPlanId).allocated_minor), 40400);
+    await post({ ...payment, direction: "RECEIPT", expectedVersion: detail.order.version }, 400);
+    await post({ ...payment, amount: "1e20", expectedVersion: detail.order.version }, 400);
+    assert.equal((await read()).order.version, detail.order.version);
+
+    const readonlyUsername = `cash_readonly_${suffix.toLowerCase()}`;
+    const readonlyPassword = `MobileCash-${suffix}-ReadOnly!`;
+    const created = await fetch(`${baseUrl}/api/admin/users`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", username: readonlyUsername, displayName: "手机财务只读测试", password: readonlyPassword, roleId: "role_readonly" }),
+    });
+    assert.equal(created.status, 201, await created.clone().text());
+    readonlyId = (await created.json()).id;
+    await database.query("UPDATE users SET must_change_password=0 WHERE id=$1", [readonlyId]);
+    const readonlyCookie = await loginAs(readonlyUsername, readonlyPassword);
+    const readonlyDetail = await getJson(`/api/orders/${encodeURIComponent(orderNo)}?section=finance`, readonlyCookie);
+    assert.equal(Object.hasOwn(readonlyDetail, "availableCurrencies"), false);
+    const denied = await fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}`, {
+      method: "POST", headers: { cookie: readonlyCookie, "content-type": "application/json" },
+      body: JSON.stringify({ ...receipt, expectedVersion: detail.order.version }),
+    });
+    assert.equal(denied.status, 403);
+    const audits = await database.query("SELECT action,result FROM audit_logs WHERE entity_type='CASH_ENTRY' AND entity_id=ANY($1::text[])", [cashIds]);
+    assert.equal(audits.rows.filter((entry) => entry.action === "ORDER_SAVECASHENTRY" && entry.result === "SUCCESS").length, 2);
+  } finally {
+    if (readonlyId) {
+      await database.query("DELETE FROM audit_logs WHERE entity_id=$1", [readonlyId]).catch(() => undefined);
+      await database.query("DELETE FROM users WHERE id=$1", [readonlyId]).catch(() => undefined);
+    }
+    await database.query("DELETE FROM orders WHERE id=$1", [orderId]).catch(() => undefined);
+    await database.query("DELETE FROM audit_logs WHERE entity_id=$1 OR entity_id=ANY($2::text[])", [orderNo, cashIds]).catch(() => undefined);
     await database.end();
   }
 });
@@ -209,7 +363,7 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     const now = new Date().toISOString();
     await database.query(`INSERT INTO roles (id,code,name,description,is_system,active,order_scope,created_at,updated_at)
       VALUES ($1,$2,$3,'集成测试本人订单角色',0,1,'OWN',$4,$4)`, [roleId, `TEST_OWN_${suffix}`, `测试业务员 ${suffix}`, now]);
-    for (const permission of ["dashboard.read", "orders.read", "orders.write", "tasks.read", "tasks.write", "finance.read", "materials.read", "agents.read", "projects.read"]) {
+    for (const permission of ["dashboard.read", "orders.read", "orders.write", "tasks.read", "tasks.write", "finance.read", "finance.write", "materials.read", "agents.read", "projects.read"]) {
       await database.query("INSERT INTO role_permissions (role_id,permission) VALUES ($1,$2)", [roleId, permission]);
     }
 
@@ -264,6 +418,10 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     assert.equal((await fetch(`${baseUrl}/api/orders/${encodeURIComponent(otherOrderNo)}`, {
       method: "POST", headers: { cookie: ownCookie, "content-type": "application/json" }, body: JSON.stringify({ action: "updateNotes", notes: "不可写入", expectedVersion: 3 }),
     })).status, 404);
+    assert.equal((await fetch(`${baseUrl}/api/orders/${encodeURIComponent(otherOrderNo)}`, {
+      method: "POST", headers: { cookie: ownCookie, "content-type": "application/json" },
+      body: JSON.stringify({ action: "saveCashEntry", direction: "RECEIPT", entryDate: "2026-09-22", description: "不可写入", currency: "USD", amount: "1", baseAmount: "1", ratePerUsd: "1", calculatedField: "baseAmount", expectedVersion: 3 }),
+    })).status, 404);
 
     const ownSearch = await getJson(`/api/data/search?q=${encodeURIComponent(`本人申请人+${suffix}`)}`, ownCookie);
     assert.equal(ownSearch.orders.some((order) => order.order_no === ownOrderNo), true);
@@ -272,8 +430,16 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     const otherAgentSearch = await getJson(`/api/data/search?q=${encodeURIComponent(`他人代理+${suffix}`)}`, ownCookie);
     assert.equal(otherAgentSearch.agents.length, 0);
     assert.equal(otherAgentSearch.projects.length, 0);
+    for (const group of ["orders", "projects", "agents"]) {
+      const scoped = await getJson(`/api/data/search?q=&group=${group}&page=1&pageSize=30`, ownCookie);
+      assert.ok(scoped.orders.every((order) => order.order_no === ownOrderNo));
+      assert.ok(scoped.projects.every((project) => project.id === ownProjectId));
+      assert.ok(scoped.agents.every((agent) => agent.id === ownAgentId));
+      assert.equal(scoped[group].length, 1);
+    }
 
     let detail = await getJson(`/api/orders/${encodeURIComponent(ownOrderNo)}`, ownCookie);
+    assert.equal(Object.hasOwn(detail, "availableCurrencies"), true, "financial writer without currencies.read still receives finance form options");
     const taskPost = async (payload, expectedStatus = 200) => {
       const response = await fetch(`${baseUrl}/api/orders/${encodeURIComponent(ownOrderNo)}`, {
         method: "POST", headers: { cookie: ownCookie, "content-type": "application/json" }, body: JSON.stringify(payload),
@@ -327,6 +493,86 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     if (userId) await database.query("DELETE FROM users WHERE id=$1", [userId]).catch(() => undefined);
     await database.query("DELETE FROM roles WHERE id=$1", [roleId]).catch(() => undefined);
     await database.query("DELETE FROM audit_logs WHERE entity_id IN ($1,$2) OR actor_username_snapshot=$3", [ownOrderNo, otherOrderNo, userName]).catch(() => undefined);
+    await database.end();
+  }
+});
+
+test("mobile material permissions preserve preview-only access and audited MRZ confirmation", { skip: !(enabled && databaseUrl) }, async () => {
+  const database = new pg.Client({ connectionString: databaseUrl });
+  await database.connect();
+  const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+  const orderId = `test_ord_mrz_${suffix}`;
+  const orderNo = `MRZ-${suffix}`;
+  const applicantId = `test_app_mrz_${suffix}`;
+  const materialId = `test_mat_mrz_${suffix}`;
+  let readonlyId = "";
+  let uploadedPath = "";
+  try {
+    const source = await database.query(`SELECT c.id AS agent_id,p.id AS project_id,p.code,p.name,p.country,p.revision_no,u.id AS owner_user_id
+      FROM agents c CROSS JOIN projects p CROSS JOIN LATERAL (SELECT id FROM users WHERE active=1 AND role_id='role_owner' ORDER BY created_at LIMIT 1) u
+      WHERE c.active=1 AND p.status='ACTIVE' LIMIT 1`);
+    assert.equal(source.rowCount, 1);
+    const row = source.rows[0];
+    const now = new Date().toISOString();
+    await database.query(`INSERT INTO orders
+      (id,order_no,agent_id,project_id,project_code_snapshot,project_name_snapshot,country_snapshot,project_revision,status,signed_at,owner_user_id,created_at,updated_at,status_changed_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE',CURRENT_DATE,$9,$10,$10,$10)`,
+      [orderId, orderNo, row.agent_id, row.project_id, row.code, row.name, row.country, row.revision_no, row.owner_user_id, now]);
+    await database.query("INSERT INTO order_applicants (id,order_id,applicant_type,name,sequence) VALUES ($1,$2,'MAIN','人工确认姓名',0)", [applicantId, orderId]);
+    await database.query("INSERT INTO order_materials (id,order_id,applicant_id,name,required,sequence,system_code) VALUES ($1,$2,$3,'护照首页',1,0,'PASSPORT_BIO_PAGE')", [materialId, orderId, applicantId]);
+    const ownerCookie = await login();
+    const readonlyUsername = `mobile_mrz_${suffix.toLowerCase()}`;
+    const readonlyPassword = `MobileMrz-${suffix}-ReadOnly!`;
+    const created = await fetch(`${baseUrl}/api/admin/users`, { method: "POST", headers: { cookie: ownerCookie, "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", username: readonlyUsername, displayName: "材料预览测试", password: readonlyPassword, roleId: "role_readonly" }) });
+    assert.equal(created.status, 201, await created.clone().text());
+    readonlyId = (await created.json()).id;
+    await database.query("UPDATE users SET must_change_password=0 WHERE id=$1", [readonlyId]);
+    const readonlyCookie = await loginAs(readonlyUsername, readonlyPassword);
+
+    const fileBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/ZxkAAAAASUVORK5CYII=", "base64");
+    const uploadForm = () => { const form = new FormData(); form.set("orderNo", orderNo); form.set("materialId", materialId);
+      form.set("file", new File([fileBytes], "护照首页.png", { type: "image/png" })); return form; };
+    assert.equal((await fetch(`${baseUrl}/api/material-files`, { method: "POST", headers: { cookie: readonlyCookie }, body: uploadForm() })).status, 403);
+    const uploaded = await fetch(`${baseUrl}/api/material-files`, { method: "POST", headers: { cookie: ownerCookie }, body: uploadForm() });
+    assert.equal(uploaded.status, 201, await uploaded.clone().text());
+    const fileId = (await uploaded.json()).id;
+    const stored = await database.query("SELECT relative_path,material_id,mime_type FROM material_files WHERE id=$1", [fileId]);
+    assert.equal(stored.rows[0].material_id, materialId);
+    assert.equal(stored.rows[0].mime_type, "image/png");
+    uploadedPath = stored.rows[0].relative_path;
+
+    const readonlyDetail = await getJson(`/api/orders/${encodeURIComponent(orderNo)}?section=people`, readonlyCookie);
+    assert.equal(readonlyDetail.materialFiles.some((file) => file.id === fileId), true);
+    const preview = await fetch(`${baseUrl}/api/material-files/${encodeURIComponent(fileId)}`, { headers: { cookie: readonlyCookie } });
+    assert.equal(preview.status, 200);
+    assert.match(preview.headers.get("content-disposition") || "", /^inline/);
+    assert.deepEqual(Buffer.from(await preview.arrayBuffer()), fileBytes);
+    assert.equal((await fetch(`${baseUrl}/api/material-files/${encodeURIComponent(fileId)}?download=1`, { headers: { cookie: readonlyCookie } })).status, 403);
+
+    const mrzPayload = { action: "confirmMrz", applicantId, materialFileId: fileId,
+      rawMrz: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\nL898902C36UTO7408122F1204159ZE184226B<<<<<10",
+      fields: { name: "人工确认姓名", surname: "ERIKSSON", givenNames: "ANNA MARIA", nationality: "UTO", passportNo: "L898902C3", birthDate: "1974-08-12", sex: "F", passportExpiry: "2012-04-15", issuingCountry: "UTO", documentCode: "P", personalNumber: "ZE184226B" },
+      expectedVersion: readonlyDetail.order.version };
+    const confirm = (cookie) => fetch(`${baseUrl}/api/orders/${encodeURIComponent(orderNo)}`, { method: "POST",
+      headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(mrzPayload) });
+    assert.equal((await confirm(readonlyCookie)).status, 403);
+    const approved = await confirm(ownerCookie);
+    assert.equal(approved.status, 200, await approved.clone().text());
+    const applicant = await database.query("SELECT name,passport_no,mrz_status FROM order_applicants WHERE id=$1", [applicantId]);
+    assert.equal(applicant.rows[0].name, "人工确认姓名");
+    assert.equal(applicant.rows[0].passport_no, "L898902C3");
+    assert.equal(applicant.rows[0].mrz_status, "VALID");
+    const audits = await database.query("SELECT action,result FROM audit_logs WHERE entity_id=$1 OR (entity_type='APPLICANT' AND entity_id=$2)", [fileId, applicantId]);
+    for (const action of ["MATERIAL_FILE_UPLOAD", "MATERIAL_FILE_PREVIEW", "APPLICANT_MRZ_CONFIRM"])
+      assert.equal(audits.rows.some((audit) => audit.action === action && audit.result === "SUCCESS"), true, `${action} audit missing`);
+  } finally {
+    if (uploadedPath) { const root = resolve(process.env.MIGRA_TEST_UPLOAD_ROOT || "data/files");
+      const absolute = resolve(root, uploadedPath); if (absolute.startsWith(root + "/")) rmSync(absolute, { force: true }); }
+    if (readonlyId) { await database.query("DELETE FROM audit_logs WHERE entity_id=$1", [readonlyId]).catch(() => undefined);
+      await database.query("DELETE FROM users WHERE id=$1", [readonlyId]).catch(() => undefined); }
+    await database.query("DELETE FROM orders WHERE id=$1", [orderId]).catch(() => undefined);
+    await database.query("DELETE FROM audit_logs WHERE entity_id=$1 OR entity_id=$2 OR (entity_type='APPLICANT' AND entity_id=$3)", [orderNo, applicantId, applicantId]).catch(() => undefined);
     await database.end();
   }
 });

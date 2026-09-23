@@ -4,23 +4,22 @@ import { KeyRound, LogOut, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { fetchApiJson } from "@/lib/api-client";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 async function postMfa(body: unknown) {
-  const response = await fetch("/api/auth/mfa", {
+  return fetchApiJson<Record<string, unknown>>("/api/auth/mfa", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "操作失败");
-  return data;
 }
 
 type SessionRow = {
@@ -52,6 +51,7 @@ export default function ProfilePage() {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [sessionMessage, setSessionMessage] = useState("");
+  const returnTo = useRef("/");
 
   async function loadSessions() {
     const response = await fetch("/api/auth/sessions", { cache: "no-store" });
@@ -59,6 +59,9 @@ export default function ProfilePage() {
   }
 
   useEffect(() => {
+    returnTo.current = safeReturnPath(
+      new URLSearchParams(window.location.search).get("return_to"),
+    );
     Promise.all([
       fetch("/api/auth/mfa", { cache: "no-store" }).then(async (response) =>
         response.ok ? response.json() : null,
@@ -94,7 +97,9 @@ export default function ProfilePage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "修改失败");
-      router.replace("/api/auth/login?return_to=/");
+      router.replace(
+        `/api/auth/login?return_to=${encodeURIComponent(returnTo.current)}`,
+      );
     } catch (reason) {
       setError(true);
       setMessage(reason instanceof Error ? reason.message : "修改失败");
@@ -113,12 +118,12 @@ export default function ProfilePage() {
           ? { password: mfaPassword, currentCode: mfaCode }
           : {}),
       });
-      setMfaSecret(data.secret);
-      setMfaReauthToken(data.reauthToken || "");
+      setMfaSecret(String(data.secret || ""));
+      setMfaReauthToken(String(data.reauthToken || ""));
       setMfaPassword("");
       setMfaCode("");
       setMfaQrCode(
-        await QRCode.toDataURL(data.otpauth, {
+        await QRCode.toDataURL(String(data.otpauth || ""), {
           width: 240,
           margin: 1,
           errorCorrectionLevel: "M",
@@ -143,7 +148,11 @@ export default function ProfilePage() {
       setMfaQrCode("");
       setMfaCode("");
       setMfaReauthToken("");
-      setRecoveryCodes(data.recoveryCodes || []);
+      setRecoveryCodes(
+        Array.isArray(data.recoveryCodes)
+          ? data.recoveryCodes.map(String)
+          : [],
+      );
       setMfaMessage(
         "双重验证已启用。恢复码只显示这一次，请保存在电脑端安全位置。",
       );
@@ -176,7 +185,11 @@ export default function ProfilePage() {
         password: mfaPassword,
         code: mfaCode,
       });
-      setRecoveryCodes(data.recoveryCodes || []);
+      setRecoveryCodes(
+        Array.isArray(data.recoveryCodes)
+          ? data.recoveryCodes.map(String)
+          : [],
+      );
       setMfaPassword("");
       setMfaCode("");
       setMfaMessage("恢复码已更新，旧恢复码全部失效。");
@@ -428,6 +441,12 @@ export default function ProfilePage() {
               <p className="mt-3 text-xs text-amber-800">
                 每条只能使用一次；重新生成后旧恢复码会全部失效。
               </p>
+              <Button
+                className="mt-4 bg-[#0f766e]"
+                onClick={() => window.location.assign(returnTo.current)}
+              >
+                保存恢复码后继续
+              </Button>
             </div>
           )}
         </section>

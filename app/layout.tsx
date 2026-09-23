@@ -1,6 +1,8 @@
 import { CurrentUserProvider } from "@/components/current-user-provider";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { requireChatGPTUser } from "@/app/chatgpt-auth";
+import { safeReturnPath } from "@/lib/safe-return-path";
 import "./globals.css";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +13,21 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
+    apple: "/icons/migra-180.png",
   },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MIGRA",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f766e",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -19,7 +35,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const user = await requireChatGPTUser("/");
+  const requestHeaders = await headers();
+  const returnTo = safeReturnPath(requestHeaders.get("x-migra-return-to"));
+  const user = await requireChatGPTUser(returnTo);
   return (
     <html lang="zh-CN">
       <body className="antialiased"><CurrentUserProvider initialUser={user}>{children}</CurrentUserProvider></body>

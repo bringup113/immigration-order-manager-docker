@@ -1,9 +1,11 @@
 import { pinyin } from "pinyin-pro";
 import type { AppDatabase } from "@/db/driver";
-import { getDatabase, nowIso } from "@/db/database";
+import { nowIso } from "@/db/database";
+import type { GlobalSearchOrder, OrderDetailTab } from "@/lib/api-contracts";
+import { normalizeOrderDetailTab } from "@/lib/order-navigation";
 
 type Row = Record<string, unknown>;
-type SearchSource = { label: string; text: string; tab: string; domain: "order" | "finance" | "materials" | "tasks"; search: string };
+type SearchSource = { label: string; text: string; tab: OrderDetailTab; domain: "order" | "finance" | "materials" | "tasks"; search: string };
 
 function compact(value: unknown) {
   return String(value ?? "").normalize("NFKC").toLowerCase().replace(/[\s,，]+/g, "");
@@ -28,7 +30,7 @@ function amountText(amountMinor: unknown, currency: unknown) {
   return `${fixed} ${simple} ${code}${fixed} ${code}${simple}`;
 }
 
-function source(label: string, values: unknown[], tab: string, domain: SearchSource["domain"] = "order"): SearchSource {
+function source(label: string, values: unknown[], tab: OrderDetailTab, domain: SearchSource["domain"] = "order"): SearchSource {
   const text = values.filter((value) => value !== null && value !== undefined && String(value).trim()).join(" · ");
   const py = pinyinValues(text);
   return { label, text, tab, domain, search: compact(`${text} ${py.full} ${py.initials}`) };
@@ -113,17 +115,29 @@ export async function rebuildEntity(db: AppDatabase, kind: string, id: string) {
     .bind(kind, id, compact(`${value} ${py.full} ${py.initials}`)).run();
 }
 
-export async function searchOrders(query: string, access: { finance: boolean; materials: boolean; tasks: boolean; ownerUserId?: string }) {
-  const db = getDatabase();
+export type SearchOrderAccess = {
+  finance: boolean;
+  materials: boolean;
+  tasks: boolean;
+  ownerUserId?: string;
+};
+
+export async function searchOrdersPage(
+  db: AppDatabase,
+  query: string,
+  access: SearchOrderAccess,
+  pageSize: number,
+  offset: number,
+): Promise<{ rows: GlobalSearchOrder[]; hasMore: boolean }> {
   const terms = searchTerms(query);
-  if (!terms.length) return [];
+  if (!terms.length) return { rows: [], hasMore: false };
   const blobParts = ["search_order_blob", ...(access.finance ? ["search_finance_blob"] : []), ...(access.materials ? ["search_material_blob"] : []), ...(access.tasks ? ["search_task_blob"] : [])];
   const clauses = terms.map(() => `(${blobParts.map((part) => `${part} LIKE ?`).join(" OR ")})`);
   const values = terms.flatMap((term) => blobParts.map(() => likePattern(term)));
   const ownerClause = access.ownerUserId ? " AND o.owner_user_id=?" : "";
-  const rows = await db.prepare(`SELECT i.order_no,i.agent_name,i.project_name,i.main_applicant,i.match_details FROM order_search_index i JOIN orders o ON o.id=i.order_id WHERE ${clauses.map((clause) => clause.replaceAll("search_", "i.search_")).join(" AND ")}${ownerClause} ORDER BY i.updated_at DESC,i.order_id DESC LIMIT 12`)
-    .bind(...values, ...(access.ownerUserId ? [access.ownerUserId] : [])).all<Row>();
-  return rows.results.map((row) => {
+  const result = await db.prepare(`SELECT i.order_no,i.agent_name,i.project_name,i.main_applicant,i.match_details FROM order_search_index i JOIN orders o ON o.id=i.order_id WHERE ${clauses.map((clause) => clause.replaceAll("search_", "i.search_")).join(" AND ")}${ownerClause} ORDER BY i.updated_at DESC,i.order_id DESC LIMIT ? OFFSET ?`)
+    .bind(...values, ...(access.ownerUserId ? [access.ownerUserId] : []), pageSize + 1, offset).all<Row>();
+  const rows = result.results.slice(0, pageSize).map((row) => {
     const details = JSON.parse(String(row.match_details)) as SearchSource[];
     const allowed = details.filter((item) => item.domain === "order" || (item.domain === "finance" && access.finance) || (item.domain === "materials" && access.materials) || (item.domain === "tasks" && access.tasks));
     const matches = terms.map((term) => allowed.find((item) => item.search.includes(term))).filter((item): item is SearchSource => Boolean(item));
@@ -133,7 +147,8 @@ export async function searchOrders(query: string, access: { finance: boolean; ma
     return {
       order_no: row.order_no, agent_name: row.agent_name, project_name: row.project_name, main_applicant: row.main_applicant,
       match_summary: summaries.map((item) => item.label).join(" · ") || "订单资料",
-      target_tab: target?.tab || "workflow",
-    };
+      target_tab: normalizeOrderDetailTab(target?.tab),
+    } as GlobalSearchOrder;
   });
+  return { rows, hasMore: result.results.length > pageSize };
 }

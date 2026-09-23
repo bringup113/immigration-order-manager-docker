@@ -4,7 +4,12 @@ set -euo pipefail
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_root"
 
-configured_user="$(docker inspect migra-order-manager --format '{{.Config.User}}')"
+migra_container="$(docker compose ps -q migra)"
+if [[ -z "$migra_container" ]]; then
+  echo "未找到当前 Compose 项目的应用容器。" >&2
+  exit 1
+fi
+configured_user="$(docker inspect "$migra_container" --format '{{.Config.User}}')"
 if [[ -z "$configured_user" || "$configured_user" == "root" || "$configured_user" == "0" || "$configured_user" == 0:* ]]; then
   echo "应用容器仍以 root 配置运行。" >&2
   exit 1

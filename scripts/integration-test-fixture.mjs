@@ -1,4 +1,6 @@
 import pg from "pg";
+import { rm } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 
 const action = process.argv[2];
 const databaseUrl = process.env.MIGRA_DATABASE_URL || process.env.DATABASE_URL;
@@ -30,6 +32,21 @@ const client = new pg.Client({ connectionString: databaseUrl });
 await client.connect();
 
 async function removeFixture() {
+  const uploadRoot = process.env.MIGRA_TEST_UPLOAD_ROOT;
+  if (uploadRoot) {
+    const files = await client.query(
+      `SELECT mf.relative_path
+         FROM material_files mf
+         JOIN orders o ON o.id=mf.order_id
+        WHERE o.id=$1 OR o.project_id=$2`,
+      [fixture.orderId, fixture.projectId],
+    );
+    const root = resolve(uploadRoot);
+    for (const file of files.rows) {
+      const path = resolve(root, String(file.relative_path || ""));
+      if (path.startsWith(root + sep)) await rm(path, { force: true });
+    }
+  }
   await client.query(
     `DELETE FROM audit_logs
       WHERE entity_id = ANY($1::text[])
