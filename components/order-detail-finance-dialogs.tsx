@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { CashCalculatedField } from "@/lib/cash-calculation";
 import { formatMoney } from "@/lib/amount";
 import { selectCashPlan } from "@/lib/cash-plan-description";
 
@@ -45,7 +44,6 @@ type Props = {
     field: "amount" | "baseAmount" | "ratePerUsd",
     value: string,
   ) => void;
-  onCalculatedCashFieldChange: (field: CashCalculatedField) => void;
   onCashCurrencyChange: (currency: string) => void;
   onCloseCash: () => void;
   onSaveCash: () => Promise<void>;
@@ -67,7 +65,6 @@ export function OrderDetailFinanceDialogs({
   cashValuesValid,
   onCashChange,
   onCashValueChange,
-  onCalculatedCashFieldChange,
   onCashCurrencyChange,
   onCloseCash,
   onSaveCash,
@@ -162,39 +159,36 @@ export function OrderDetailFinanceDialogs({
               />
             </Field>
             <CashCalculationInput
+              id="desktop-cash-amount"
               label={`原币金额（${cash.currency}）`}
               value={cash.amount}
               auto={cash.calculatedField === "amount"}
-              autoDisabled={cash.currency === "USD"}
               step="0.01"
               onChange={(value) => onCashValueChange("amount", value)}
-              onAuto={() => onCalculatedCashFieldChange("amount")}
             />
             <CashCalculationInput
+              id="desktop-cash-base-amount"
               label="本位币金额（USD）"
               value={cash.baseAmount}
               auto={cash.calculatedField === "baseAmount"}
-              autoDisabled={cash.currency === "USD"}
               step="0.01"
               onChange={(value) => onCashValueChange("baseAmount", value)}
-              onAuto={() => onCalculatedCashFieldChange("baseAmount")}
             />
             <div className="sm:col-span-2">
               <CashCalculationInput
+                id="desktop-cash-rate"
                 label={`汇率（1 USD = ? ${cash.currency}）`}
                 value={cash.currency === "USD" ? "1" : cash.ratePerUsd}
                 auto={cash.calculatedField === "ratePerUsd"}
-                autoDisabled={cash.currency === "USD"}
                 locked={cash.currency === "USD"}
                 step="0.00000001"
                 onChange={(value) => onCashValueChange("ratePerUsd", value)}
-                onAuto={() => onCalculatedCashFieldChange("ratePerUsd")}
               />
             </div>
             <div className="sm:col-span-2 rounded-xl border border-teal-100 bg-teal-50/60 p-3 text-xs text-teal-900">
               {cash.currency === "USD"
-                ? "USD 与本位币相同，只需填写原币金额。"
-                : "绿色项目由另外两项自动计算；点击其他项目右上角的“改为自动计算”即可切换。"}
+                ? "USD 与本位币相同，只需填写其中一项金额，另一项会同步。"
+                : "任意填写两项，第三项自动算出；直接修改自动算出的数值，系统会改算另一项。切换币种会清空金额。"}
               {cash.orderPlanId && (
                 <p className="mt-1 text-teal-800">
                   关联不同币种的计划时，系统还会按计划汇率快照自动计算计入计划的金额。

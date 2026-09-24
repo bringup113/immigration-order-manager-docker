@@ -18,8 +18,8 @@ const statusLabel: Record<string, string> = {
 
 function nextOrderDate(order: OrderListRow) {
   return [
-    order.current_step_due_date ? { label: "流程预计", date: order.current_step_due_date } : null,
-    order.pending_follow_up_date ? { label: "待跟进", date: order.pending_follow_up_date } : null,
+    order.current_step_due_date ? { label: "流程预计日期：", date: order.current_step_due_date } : null,
+    order.pending_follow_up_date ? { label: "跟进日期：", date: order.pending_follow_up_date } : null,
   ].filter((entry): entry is { label: string; date: string } => Boolean(entry)).sort((a, b) => a.date.localeCompare(b.date))[0];
 }
 
@@ -35,9 +35,14 @@ function MobileOrdersContent() {
   const sort = orderSortOptions.some((option) => option.value === requestedSort) ? requestedSort : DEFAULT_ORDER_SORT;
   const requestedStatus = params.get("status") || "";
   const status = requestedStatus in statusLabel ? requestedStatus : "";
+  const projectId = params.get("projectId") || "";
+  const agentId = params.get("agentId") || "";
+  const relatedLabel = (params.get("relatedLabel") || "").slice(0, 120);
   const restored = useRef("");
   const query = new URLSearchParams({ page: String(page), pageSize: "10", q, sort });
   if (status) query.set("status", status);
+  if (projectId) query.set("projectId", projectId);
+  if (agentId) query.set("agentId", agentId);
   const { rows, loading, error, total, totalPages, hasMore, reload } = useApiPage<OrderListRow>(`orders?${query}`, canReadOrders);
   const currentPath = `/m/orders${params.size ? `?${params}` : ""}`;
 
@@ -64,9 +69,14 @@ function MobileOrdersContent() {
 
   return <MobileShell title="订单">
     {!canReadOrders ? <MobilePermission /> : <div className="space-y-4">
+      {(projectId || agentId) && <div className="flex items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+        <span className="min-w-0 truncate">关联订单{relatedLabel ? ` · ${relatedLabel}` : ""}</span>
+        <button type="button" onClick={() => navigate({ projectId: "", agentId: "", relatedLabel: "", page: "1" })}
+          className="min-h-11 shrink-0 px-2 text-xs font-semibold text-teal-700">清除</button>
+      </div>}
       <OrderSearchForm key={q} initialQuery={q} onSubmit={(value) => navigate({ q: value, page: "1" })} />
       <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="订单状态筛选">
-        {([ ["", "全部"], ["ACTIVE", "办理中"], ["PAUSED", "暂停"], ["DRAFT", "草稿"], ["COMPLETED", "已完成"] ] as const).map(([value, label]) => <button key={value} onClick={() => navigate({ status: value, page: "1" })} aria-pressed={status === value} className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ${status === value ? "bg-teal-700 text-white" : "bg-white text-slate-600"}`}>{label}</button>)}
+        {([ ["", "全部"], ["ACTIVE", "办理中"], ["PAUSED", "暂停"], ["DRAFT", "草稿"], ["COMPLETED", "已完成"] ] as const).map(([value, label]) => <button key={value} onClick={() => navigate({ status: value, page: "1" })} aria-pressed={status === value} className={`min-h-11 shrink-0 rounded-full px-3 py-2 text-xs font-semibold ${status === value ? "bg-teal-700 text-white" : "bg-white text-slate-600"}`}>{label}</button>)}
       </div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500">{loading ? "正在更新…" : `共 ${total} 张订单`}</p>
@@ -96,9 +106,9 @@ function MobileOrdersContent() {
         })}
       </div>}
       {total > 0 && <div className="flex items-center justify-between gap-3 pb-2">
-        <button disabled={loading || page <= 1} onClick={() => navigate({ page: String(page - 1) })} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40">上一页</button>
+        <button disabled={loading || page <= 1} onClick={() => navigate({ page: String(page - 1) })} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40">上一页</button>
         <span className="text-xs text-slate-500">{page} / {totalPages}</span>
-        <button disabled={loading || !hasMore} onClick={() => navigate({ page: String(page + 1) })} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40">下一页</button>
+        <button disabled={loading || !hasMore} onClick={() => navigate({ page: String(page + 1) })} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40">下一页</button>
       </div>}
     </div>}
   </MobileShell>;
@@ -109,7 +119,7 @@ function OrderSearchForm({ initialQuery, onSubmit }: { initialQuery: string; onS
   function submit(event: FormEvent) { event.preventDefault(); onSubmit(draft.trim()); }
   return <form onSubmit={submit} className="flex gap-2">
     <label className="relative min-w-0 flex-1"><span className="sr-only">搜索订单</span><Search size={18} className="absolute left-3 top-3 text-slate-400" /><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="项目、申请人、代理或办理内容" className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-teal-500" /></label>
-    <button className="rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white">搜索</button>
+    <button className="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white">搜索</button>
   </form>;
 }
 

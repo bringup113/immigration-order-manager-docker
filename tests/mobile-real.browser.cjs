@@ -174,7 +174,7 @@ if (screenshotDir) mkdirSync(screenshotDir, { recursive: true });
     await page.getByLabel("付款说明").fill("CI 手机端付款");
     await page.getByLabel("实际币种").selectOption("MYR");
     await page.getByLabel("原币金额（MYR）").fill("404");
-    assert.equal(await page.getByLabel("本位币金额（USD） · 自动").inputValue(), "100.00");
+    assert.equal(await page.getByLabel("本位币金额（USD） · 自动算出").inputValue(), "100.00");
     await page.getByRole("button", { name: "保存付款" }).click();
     await page.getByText("付款 · CI 手机端付款").waitFor();
     assert.deepEqual(errors, []);
@@ -183,6 +183,7 @@ if (screenshotDir) mkdirSync(screenshotDir, { recursive: true });
     await page.goto(`${base}/m/orders/${orderNo}?tab=people`);
     await page.getByText("CI 辅助材料").waitFor();
     const uploaded = page.waitForResponse((response) => response.url().endsWith("/api/material-files") && response.request().method() === "POST");
+    await page.getByRole("button", { name: "CI 主申请人 CI 辅助材料 上传材料" }).click();
     await page.getByLabel("CI 主申请人 CI 辅助材料 选择文件上传").setInputFiles({
       name: "mobile-material.png", mimeType: "image/png",
       buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/ZxkAAAAASUVORK5CYII=", "base64"),

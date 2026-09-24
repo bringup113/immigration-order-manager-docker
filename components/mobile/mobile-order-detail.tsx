@@ -76,10 +76,12 @@ export function MobileOrderDetail({
   orderNo,
   requestedTab,
   source,
+  dashboardRange,
 }: {
   orderNo: string;
   requestedTab: OrderDetailTab;
   source?: "search" | "dashboard";
+  dashboardRange?: "overdue" | "today" | "week";
 }) {
   const { user } = useCurrentUser();
   const can = (permission: string) =>
@@ -90,12 +92,13 @@ export function MobileOrderDetail({
       ? "workflow"
       : requestedTab;
   const [data, setData] = useState<OrderDetailData | null>(null);
+  const [dataSection, setDataSection] = useState<OrderDetailTab | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [historyPage, setHistoryPage] = useState(1);
   const [cashPage, setCashPage] = useState(1);
   const [backHref, setBackHref] = useState(
-    source === "search" ? "/m/search" : source === "dashboard" ? "/m" : "/m/orders",
+    source === "search" ? "/m/search" : source === "dashboard" && dashboardRange ? `/m?range=${dashboardRange}` : source === "dashboard" ? "/m" : "/m/orders",
   );
   const [revision, setRevision] = useState(0);
 
@@ -116,6 +119,7 @@ export function MobileOrderDetail({
     const controller = new AbortController();
     const params = new URLSearchParams({
       section: tab,
+      surface: "mobile",
       historyPage: String(historyPage),
       cashPage: String(cashPage),
       cashStatus: "active",
@@ -126,7 +130,10 @@ export function MobileOrderDetail({
       `/api/orders/${encodeURIComponent(orderNo)}?${params}`,
       { cache: "no-store", signal: controller.signal },
     )
-      .then(setData)
+      .then((result) => {
+        setData(result);
+        setDataSection(tab);
+      })
       .catch((reason) => {
         if (!isAbortError(reason)) {
           setError(reason instanceof Error ? reason.message : "读取订单失败");
@@ -141,21 +148,33 @@ export function MobileOrderDetail({
   }, [orderNo, tab, historyPage, cashPage, revision]);
 
   const order = data?.order;
+  const sectionReady = Boolean(data && dataSection === tab);
   const mainApplicant = data?.applicants.find((item) => item.applicant_type === "MAIN");
   const completedSteps =
     data?.steps.filter((item) => item.status === "COMPLETED" || item.status === "SKIPPED").length ?? 0;
+  const currentStep = data?.steps.find((item) => item.status === "IN_PROGRESS") ??
+    data?.steps.find((item) => item.status === "PENDING" || item.status === "NOT_STARTED");
   const sum = (rows: Row[], key: string) =>
     rows.reduce((total, item) => total + number(item, key), 0);
   const receivable = data?.plans.filter((item) => item.plan_type === "RECEIVABLE") ?? [];
   const payable = data?.plans.filter((item) => item.plan_type === "PAYABLE") ?? [];
-  const showWorkflowActions = Boolean(data && tab === "workflow" && can("orders.write"));
-  const showFinanceActions = Boolean(data && tab === "finance" && can("finance.write"));
+  const sortedPlans = [...(data?.plans ?? [])].sort((left, right) => {
+    const leftRemaining = Math.max(0, number(left, "planned_amount_minor") - number(left, "allocated_minor"));
+    const rightRemaining = Math.max(0, number(right, "planned_amount_minor") - number(right, "allocated_minor"));
+    if (Boolean(leftRemaining) !== Boolean(rightRemaining)) return leftRemaining ? -1 : 1;
+    return value(left, "due_date").localeCompare(value(right, "due_date"));
+  });
+  const showWorkflowActions = Boolean(sectionReady && tab === "workflow" && can("orders.write"));
+  const showFinanceActions = Boolean(sectionReady && tab === "finance" && can("finance.write"));
   const hasBottomActions = showWorkflowActions || showFinanceActions;
   const visibleTabs = tabs.filter((item) => can(item.permission));
 
   const mobileTabHref = (nextTab: OrderDetailTab) => {
     const target = orderDetailHref(orderNo, nextTab, "mobile");
-    return source ? `${target}${target.includes("?") ? "&" : "?"}from=${source}` : target;
+    if (!source) return target;
+    const context = new URLSearchParams({ from: source });
+    if (source === "dashboard" && dashboardRange) context.set("range", dashboardRange);
+    return `${target}${target.includes("?") ? "&" : "?"}${context}`;
   };
 
   return (
@@ -244,11 +263,12 @@ export function MobileOrderDetail({
                     </button>
                   </MobileMessage>
                 )}
-                {loading && data && (
+                {loading && sectionReady && (
                   <p role="status" className="text-center text-xs text-slate-500">
                     正在更新模块…
                   </p>
                 )}
+                {loading && !sectionReady && <MobileMessage>正在读取当前模块…</MobileMessage>}
 
                 {showWorkflowActions && data && (
                   <MobileWorkflowActions
@@ -277,7 +297,7 @@ export function MobileOrderDetail({
                   />
                 )}
 
-                {!loading && !error && data && tab === "workflow" && (
+                {!error && sectionReady && data && tab === "workflow" && (
                   <div className="space-y-4">
                     <section className="overflow-hidden rounded-2xl bg-white">
                       <SectionHeading
@@ -287,38 +307,44 @@ export function MobileOrderDetail({
                       {data.steps.length === 0 ? (
                         <p className="px-4 py-5 text-sm text-slate-500">尚未设置流程。</p>
                       ) : (
-                        <ol>
-                          {data.steps.map((step) => {
-                            const status = value(step, "status");
-                            const active = status === "IN_PROGRESS";
-                            const finished = status === "COMPLETED" || status === "SKIPPED";
-                            const StepIcon = finished ? CheckCircle2 : active ? CircleDot : Circle;
-                            return (
-                              <li
-                                key={value(step, "id")}
-                                className={`flex gap-3 border-t border-slate-100 px-4 py-3 first:border-0 ${
-                                  active ? "bg-teal-50/70" : ""
-                                }`}
-                              >
-                                <StepIcon
-                                  size={19}
-                                  className={`mt-0.5 shrink-0 ${
-                                    finished ? "text-teal-600" : active ? "text-blue-600" : "text-slate-300"
-                                  }`}
-                                />
-                                <div className="min-w-0 flex-1">
-                                  <p className={`font-medium ${active ? "text-teal-950" : "text-slate-800"}`}>
-                                    {value(step, "name")}
-                                  </p>
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    {stepStatus[status] || status}
-                                    {step.due_date ? ` · 预计 ${value(step, "due_date")}` : ""}
-                                  </p>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ol>
+                        <div className="p-4">
+                          {currentStep ? (
+                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4">
+                              <p className="text-xs font-semibold tracking-wide text-teal-700">当前步骤</p>
+                              <p className="mt-2 text-lg font-semibold text-teal-950">{value(currentStep, "name")}</p>
+                              <p className="mt-2 text-sm text-teal-800">
+                                {stepStatus[value(currentStep, "status")] || value(currentStep, "status")}
+                                {currentStep.due_date ? ` · 预计 ${value(currentStep, "due_date")}` : " · 未设日期"}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">全部办理步骤已完成。</div>
+                          )}
+                          <details className="mt-3 rounded-xl border border-slate-200">
+                            <summary className="min-h-11 cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700">
+                              查看完整流程 · {data.steps.length} 步
+                            </summary>
+                            <ol className="border-t border-slate-100">
+                              {data.steps.map((step) => {
+                                const status = value(step, "status");
+                                const active = status === "IN_PROGRESS";
+                                const finished = status === "COMPLETED" || status === "SKIPPED";
+                                const StepIcon = finished ? CheckCircle2 : active ? CircleDot : Circle;
+                                return (
+                                  <li key={value(step, "id")} className={`flex gap-3 border-t border-slate-100 px-4 py-3 first:border-0 ${active ? "bg-teal-50/70" : ""}`}>
+                                    <StepIcon size={19} className={`mt-0.5 shrink-0 ${finished ? "text-teal-600" : active ? "text-blue-600" : "text-slate-300"}`} />
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`font-medium ${active ? "text-teal-950" : "text-slate-800"}`}>{value(step, "name")}</p>
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        {stepStatus[status] || status}{step.due_date ? ` · 预计 ${value(step, "due_date")}` : ""}
+                                      </p>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                          </details>
+                        </div>
                       )}
                     </section>
 
@@ -397,34 +423,32 @@ export function MobileOrderDetail({
                   </div>
                 )}
 
-                {!loading && !error && data && tab === "finance" && can("finance.read") && (
+                {!error && sectionReady && data && tab === "finance" && can("finance.read") && (
                   <div className="space-y-4">
-                    <section className="grid grid-cols-2 overflow-hidden rounded-2xl bg-white">
-                      {[
-                        ["预计应收", sum(receivable, "planned_base_minor")],
-                        ["实际已收", data.receivedBaseMinor],
-                        ["预计应付", sum(payable, "planned_base_minor")],
-                        ["实际已付", data.paidBaseMinor],
-                      ].map(([label, amount], index) => (
-                        <div
-                          key={String(label)}
-                          className={`p-4 ${index % 2 ? "border-l" : ""} ${index > 1 ? "border-t" : ""} border-slate-100`}
-                        >
-                          <p className="text-xs text-slate-500">{label} · USD</p>
-                          <p className="mt-2 font-semibold text-slate-900">
-                            {formatMoney("USD", Number(amount))}
-                          </p>
-                        </div>
-                      ))}
-                    </section>
-                    <p className="px-1 text-xs leading-5 text-slate-500">
-                      汇总使用本位币 USD；计划按预算汇率，实际按每笔入账汇率。是否结清以计划原币判断。
-                    </p>
+                    <details className="overflow-hidden rounded-2xl bg-white">
+                      <summary className="min-h-12 cursor-pointer list-none px-4 py-4 font-semibold text-slate-800">查看收支汇总</summary>
+                      <section className="grid grid-cols-2 border-t border-slate-100">
+                        {[
+                          ["预计应收", sum(receivable, "planned_base_minor")],
+                          ["实际已收", data.receivedBaseMinor],
+                          ["预计应付", sum(payable, "planned_base_minor")],
+                          ["实际已付", data.paidBaseMinor],
+                        ].map(([label, amount], index) => (
+                          <div key={String(label)} className={`p-4 ${index % 2 ? "border-l" : ""} ${index > 1 ? "border-t" : ""} border-slate-100`}>
+                            <p className="text-xs text-slate-500">{label} · USD</p>
+                            <p className="mt-2 font-semibold text-slate-900">{formatMoney("USD", Number(amount))}</p>
+                          </div>
+                        ))}
+                      </section>
+                      <p className="border-t border-slate-100 px-4 py-3 text-xs leading-5 text-slate-500">
+                        汇总使用本位币 USD；计划按预算汇率，实际按每笔入账汇率。是否结清以计划原币判断。
+                      </p>
+                    </details>
 
                     <section className="overflow-hidden rounded-2xl bg-white">
                       <SectionHeading title="收付款计划" detail={`${data.plans.length} 项`} />
-                      {data.plans.length ? (
-                        data.plans.map((plan) => {
+                      {sortedPlans.length ? (
+                        sortedPlans.map((plan) => {
                           const remaining = Math.max(
                             0,
                             number(plan, "planned_amount_minor") - number(plan, "allocated_minor"),
@@ -508,7 +532,7 @@ export function MobileOrderDetail({
                   </div>
                 )}
 
-                {data && tab === "people" &&
+                {!error && sectionReady && data && tab === "people" &&
                   (can("materials.read") ? (
                     <MobileMaterials
                       orderNo={orderNo}
@@ -532,7 +556,7 @@ export function MobileOrderDetail({
                     </section>
                   ))}
 
-                {data && tab === "common" && can("materials.read") && (
+                {!error && sectionReady && data && tab === "common" && can("materials.read") && (
                   <MobileMaterials
                     orderNo={orderNo}
                     version={number(order, "version")}

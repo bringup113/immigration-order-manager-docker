@@ -15,6 +15,7 @@ export type Dashboard = {
   balanceMinor: number;
   reminders: {
     source: string;
+    source_id: string;
     reminder_type: ReminderType;
     target_tab: OrderDetailTab;
     due_date: string;
@@ -24,6 +25,7 @@ export type Dashboard = {
     main_applicant: string | null;
   }[];
   reminderCounts?: { todayKey: string; overdue: number; today: number; week: number };
+  reminderPagination?: { page: number; pageSize: number; hasMore: boolean };
   trend: { month: string; income_minor: number; expense_minor: number }[];
   access: {
     orders: boolean;

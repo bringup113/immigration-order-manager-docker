@@ -23,6 +23,10 @@ export async function listOrders(
   const filters = [scope.sql];
   if (params.get("owner")) { filters.push("o.owner_user_id=?"); values.push(params.get("owner")); }
   if (params.get("status")) { filters.push("o.status=?"); values.push(params.get("status")); }
+  const projectId = (params.get("projectId") || "").trim().slice(0, 80);
+  const agentId = (params.get("agentId") || "").trim().slice(0, 80);
+  if (projectId) { filters.push("o.project_id=?"); values.push(projectId); }
+  if (agentId) { filters.push("o.agent_id=?"); values.push(agentId); }
   const domains = ["search_order_blob", ...(hasPermission(user, "finance.read") ? ["search_finance_blob"] : []), ...(hasPermission(user, "materials.read") ? ["search_material_blob"] : []), ...(hasPermission(user, "tasks.read") ? ["search_task_blob"] : [])];
   for (const term of searchTerms((params.get("q") || "").slice(0,160))) {
     filters.push(`EXISTS (SELECT 1 FROM order_search_index i WHERE i.order_id=o.id AND (${domains.map((field) => `i.${field} LIKE ?`).join(" OR ")}))`);

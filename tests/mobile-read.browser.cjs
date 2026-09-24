@@ -35,8 +35,8 @@ const dashboard = {
   reminderCounts: { todayKey: "2026-09-21", overdue: 41, today: 0, week: 1 },
   access: { orders: true, finance: true, materials: true, tasks: true, ordersWrite: true },
   reminders: [
-    { source: "材料收集", reminder_type: "MATERIAL", target_tab: "people", due_date: "2026-09-20", order_no: orderNo, title: "过期材料", project_name: "手机测试项目 1", main_applicant: "申请人 1" },
-    { source: "收付款计划", reminder_type: "RECEIPT", target_tab: "finance", due_date: "2026-09-22", order_no: orderNo, title: "首付款", project_name: "手机测试项目 1", main_applicant: "申请人 1" },
+    { source: "材料收集", source_id: "material-reminder", reminder_type: "MATERIAL", target_tab: "people", due_date: "2026-09-20", order_no: orderNo, title: "过期材料", project_name: "手机测试项目 1", main_applicant: "申请人 1" },
+    { source: "收付款计划", source_id: "receipt-reminder", reminder_type: "RECEIPT", target_tab: "finance", due_date: "2026-09-22", order_no: orderNo, title: "首付款", project_name: "手机测试项目 1", main_applicant: "申请人 1" },
   ],
 };
 
@@ -49,15 +49,18 @@ const dashboard = {
     page.on("pageerror", (error) => pageErrors.push(`${page.url()}\n${error.stack || error.message}`));
     await page.route("**/api/data/dashboard?**", (route) => {
       const range = new URL(route.request().url()).searchParams.get("range");
+      const pageNumber = Number(new URL(route.request().url()).searchParams.get("page") || 1);
       const reminders = dashboard.reminders.filter((item) => range === "overdue" ? item.due_date < dashboard.reminderCounts.todayKey : range === "today" ? item.due_date === dashboard.reminderCounts.todayKey : range === "week" ? item.due_date > dashboard.reminderCounts.todayKey : true);
-      route.fulfill({ json: { ...dashboard, reminders } });
+      route.fulfill({ json: { ...dashboard, reminders: reminders.slice(pageNumber - 1, pageNumber), reminderPagination: { page: pageNumber, pageSize: 1, hasMore: pageNumber < reminders.length } } });
     });
     await page.route("**/api/data/orders?**", (route) => {
       const url = new URL(route.request().url());
       const number = Number(url.searchParams.get("page") || 1);
       route.fulfill({ json: { rows: number === 1 ? Array.from({ length: 10 }, (_, index) => listOrder(index + 1)) : [listOrder(11)], page: number, pageSize: 10, total: 11, totalPages: 2, hasMore: number === 1, owners: [] } });
     });
+    let searchRequests = 0;
     await page.route("**/api/data/search?**", (route) => {
+      searchRequests += 1;
       const url = new URL(route.request().url());
       const group = url.searchParams.get("group");
       const number = Number(url.searchParams.get("page") || 1);
@@ -67,9 +70,14 @@ const dashboard = {
         pagination: pagination(pageInfo(number, 12, number === 1), pageInfo(1, 8), pageInfo(1, 8)), indexing: false,
       } });
     });
+    await page.route("**/api/data/currencies", (route) => route.fulfill({ json: { rows: detail.availableCurrencies } }));
     const mutations = [];
     let conflictNext = false;
-    await page.route(`**/api/orders/${orderNo}?**`, (route) => route.fulfill({ json: detail }));
+    await page.route(`**/api/orders/${orderNo}?**`, async (route) => {
+      if (new URL(route.request().url()).searchParams.get("section") === "common")
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      await route.fulfill({ json: detail });
+    });
     await page.route(`**/api/orders/${orderNo}`, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       const body = route.request().postDataJSON();
@@ -122,10 +130,14 @@ const dashboard = {
     assert.equal(await page.getByRole("navigation", { name: "手机端主导航" }).getByRole("link").count(), 4);
     assert.equal(await page.getByRole("button", { name: /逾期.*41/ }).count(), 1, "summary is not derived from the one returned reminder");
     await page.getByRole("button", { name: /逾期.*41/ }).click();
+    await page.waitForURL(`${base}/m?range=overdue`);
     await page.getByText("逾期待办 · 41").waitFor();
     await page.getByText("过期材料").waitFor();
+    await page.getByText("材料日期").waitFor();
+    await page.getByText("已逾期 1 天 · 2026-09-20").waitFor();
     assert.equal(await page.getByText("首付款").count(), 0, "date filter is applied by the API");
     await page.getByRole("button", { name: "查看全部" }).click();
+    await page.getByRole("button", { name: "继续查看提醒" }).click();
     await page.getByText("首付款").waitFor();
     await page.getByText("首付款").last().click();
     await page.waitForURL(/\/m\/orders\/CI-MOBILE-2026092101\?tab=finance&from=dashboard$/);
@@ -166,6 +178,8 @@ const dashboard = {
     console.log("PASS mobile list sorting, paging and four-module detail");
 
     await page.goto(`${base}/m/search`);
+    await page.getByText("输入订单、申请人、项目、代理、流程、收付款或材料信息开始搜索。").waitFor();
+    assert.equal(searchRequests, 0, "empty mobile search must not call the business search API");
     await page.getByRole("textbox", { name: "全局搜索关键词" }).fill("申请人+金额");
     await page.getByText("护照首页").waitFor();
     await page.getByRole("button", { name: "继续查看" }).click();
@@ -175,13 +189,23 @@ const dashboard = {
     await page.waitForURL(/tab=people&from=search$/);
     await page.getByText("护照首页").waitFor();
     assert.equal(await page.getByRole("link", { name: "申请人与材料" }).getAttribute("aria-current"), "page");
+    await page.goBack();
+    await page.getByText("护照首页").waitFor();
+    assert.equal(await page.getByRole("textbox", { name: "全局搜索关键词" }).inputValue(), "申请人+金额");
+    await page.getByText("示例项目", { exact: true }).click();
+    await page.waitForURL(/\/m\/orders\?.*projectId=project-1/);
+    await page.getByText("关联订单 · 示例项目").waitFor();
+    await page.goBack();
+    await page.getByText("护照首页").waitFor();
+    await page.getByText("手机测试项目 1 · 申请人 1").click();
+    await page.waitForURL(/tab=people&from=search$/);
     console.log("PASS mobile grouped search, deduplication and module target");
 
     await page.goto(`${base}/m/orders/${orderNo}?tab=workflow`);
     await page.getByRole("button", { name: "完成步骤" }).click();
     await page.getByRole("dialog", { name: "完成当前步骤" }).getByRole("button", { name: "确认完成" }).click();
-    await page.getByText("递交申请").waitFor();
-    await page.getByText("进行中 · 预计 2026-10-10").waitFor();
+    await page.getByText("递交申请", { exact: true }).first().waitFor();
+    await page.getByText("进行中 · 预计 2026-10-10", { exact: true }).first().waitFor();
     assert.deepEqual(mutations[0], { action: "step", stepId: "step-1", status: "COMPLETED", expectedVersion: 1 });
     await page.getByRole("button", { name: "新增跟进" }).click();
     await page.getByRole("textbox", { name: "本次跟进内容" }).fill("已联系申请人");
@@ -215,11 +239,25 @@ const dashboard = {
     if (screenshotDir)
       await page.screenshot({ path: `${screenshotDir}/detail-finance.png`, fullPage: true });
     await page.getByRole("button", { name: "登记收款" }).click();
+    const mobileCashDialog = page.getByRole("dialog", { name: "登记收款" });
+    await page.waitForTimeout(300);
+    const mobileCashBox = await mobileCashDialog.boundingBox();
+    assert.ok(mobileCashBox && Math.abs(mobileCashBox.width - viewportWidth) < 1 && Math.abs(mobileCashBox.height - 844) < 1,
+      "mobile cash form should use the full viewport");
+    if (screenshotDir)
+      await page.screenshot({ path: `${screenshotDir}/cash-form.png`, fullPage: true });
     await page.getByLabel("关联计划（可选）").selectOption("plan-1");
     assert.equal(await page.getByLabel("收款说明").inputValue(), "首付款");
     await page.getByLabel("实际币种").selectOption("CNY");
+    await page.getByText("调整本位币金额与汇率").click();
     await page.getByLabel("原币金额（CNY）").fill("750");
-    assert.equal(await page.getByLabel("本位币金额（USD） · 自动").inputValue(), "100.00");
+    assert.equal(await page.getByLabel("本位币金额（USD） · 自动算出").inputValue(), "100.00");
+    await page.getByLabel("本位币金额（USD） · 自动算出").fill("125");
+    assert.equal(await page.getByLabel("汇率（1 USD = ? CNY） · 自动算出").inputValue(), "6");
+    await page.getByLabel("汇率（1 USD = ? CNY） · 自动算出").fill("7.5");
+    assert.equal(await page.getByLabel("原币金额（CNY） · 自动算出").inputValue(), "937.50");
+    await page.getByLabel("原币金额（CNY） · 自动算出").fill("750");
+    assert.equal(await page.getByLabel("本位币金额（USD） · 自动算出").inputValue(), "100.00");
     await page.getByRole("button", { name: "保存收款" }).click();
     await page.getByText("收款 · 首付款").waitFor();
     const receipt = mutations[3];
@@ -231,10 +269,10 @@ const dashboard = {
     assert.equal(receipt.expectedVersion, 4);
     await page.getByRole("button", { name: "登记付款" }).click();
     await page.getByLabel("关联计划（可选）").selectOption("plan-2");
-    await page.getByLabel("自动计算").selectOption("ratePerUsd");
+    await page.getByText("调整本位币金额与汇率").click();
     await page.getByLabel("原币金额（CNY）").fill("750");
-    await page.getByLabel("本位币金额（USD）").fill("100");
-    assert.equal(await page.getByLabel("汇率（1 USD = ? CNY） · 自动").inputValue(), "7.5");
+    await page.getByLabel("本位币金额（USD） · 自动算出").fill("100");
+    assert.equal(await page.getByLabel("汇率（1 USD = ? CNY） · 自动算出").inputValue(), "7.5");
     await page.getByRole("button", { name: "保存付款" }).click();
     await page.getByText("付款 · 项目服务费").waitFor();
     assert.equal(mutations[4].direction, "PAYMENT");
@@ -246,9 +284,20 @@ const dashboard = {
 
     await page.goto(`${base}/m/orders/${orderNo}?tab=people`);
     await page.getByText("护照首页").waitFor();
+    await page.getByRole("button", { name: "申请人 1 护照首页 上传材料" }).click();
+    if (screenshotDir) {
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${screenshotDir}/material-upload-sheet.png`, fullPage: true });
+    }
     await page.getByLabel("申请人 1 护照首页 选择文件上传").setInputFiles({ name: "passport.jpg", mimeType: "image/jpeg", buffer: Buffer.from("mock-passport-image") });
     const review = page.getByRole("dialog", { name: "核对护照识别结果" });
     await review.waitFor();
+    await page.waitForTimeout(300);
+    const reviewBox = await review.boundingBox();
+    assert.ok(reviewBox && Math.abs(reviewBox.width - viewportWidth) < 1 && Math.abs(reviewBox.height - 844) < 1,
+      "mobile MRZ review should use the full viewport");
+    if (screenshotDir)
+      await page.screenshot({ path: `${screenshotDir}/mrz-review.png`, fullPage: true });
     assert.equal(scanCount, 1);
     assert.equal(await review.getByLabel("护照号码").inputValue(), "L898902C3");
     assert.equal(await review.getByLabel("系统显示姓名").inputValue(), "申请人 1", "existing display name must not be overwritten without confirmation");
@@ -269,7 +318,10 @@ const dashboard = {
     assert.equal(scanCount, 2, "existing passport can be rescanned through the preview endpoint");
     await review.getByRole("button", { name: "Close" }).click();
     await page.getByRole("link", { name: "合同与付款" }).click();
+    await page.getByText("正在读取当前模块…").waitFor();
+    assert.equal(await page.getByText("护照首页").count(), 0, "old applicant materials must not appear in the common-files module");
     await page.getByText("服务合同").waitFor();
+    await page.getByRole("button", { name: "合同与付款 服务合同 上传材料" }).click();
     await page.getByLabel("合同与付款 服务合同 选择文件上传").setInputFiles({ name: "contract.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nmock\n") });
     await page.getByText("已上传 1 个文件").waitFor();
     assert.equal(fileRequests.length, 2);
@@ -283,5 +335,20 @@ const dashboard = {
     await page.waitForURL(`${base}/m`);
     assert.deepEqual(pageErrors, []);
     console.log("PASS mobile viewport, desktop switch and no runtime errors");
+
+    await page.goto(`${base}/orders/${orderNo}?tab=finance`);
+    await page.getByRole("button", { name: "登记收款" }).first().click();
+    const desktopCash = page.getByRole("dialog", { name: "登记收款" });
+    await desktopCash.getByRole("combobox").nth(1).click();
+    await page.getByRole("option", { name: /CNY/ }).click();
+    await desktopCash.getByLabel("原币金额（CNY）").fill("750");
+    assert.equal(await desktopCash.getByLabel("本位币金额（USD）").inputValue(), "100.00");
+    await desktopCash.getByLabel("本位币金额（USD）").fill("125");
+    assert.equal(await desktopCash.getByLabel("汇率（1 USD = ? CNY）").inputValue(), "6");
+    await desktopCash.getByLabel("汇率（1 USD = ? CNY）").fill("7.5");
+    assert.equal(await desktopCash.getByLabel("原币金额（CNY）").inputValue(), "937.50");
+    assert.equal(await desktopCash.getByText("改为自动计算").count(), 0);
+    assert.deepEqual(pageErrors, []);
+    console.log("PASS desktop receipt infers the third cash value without a manual switch");
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

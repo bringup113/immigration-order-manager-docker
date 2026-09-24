@@ -141,7 +141,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (resource === "dashboard") {
     const requestedRange = request.nextUrl.searchParams.get("range");
     const range: ReminderRange | undefined = requestedRange === "all" || requestedRange === "overdue" || requestedRange === "today" || requestedRange === "week" ? requestedRange : undefined;
-    return NextResponse.json(await readDashboard(db, auth.user, range));
+    const reminderPage = Math.min(100000, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") || "1", 10) || 1));
+    const reminderPageSize = Math.min(30, Math.max(5, Number.parseInt(request.nextUrl.searchParams.get("pageSize") || "30", 10) || 30));
+    const mobileSurface = request.nextUrl.searchParams.get("surface") === "mobile";
+    return NextResponse.json(await readDashboard(db, auth.user, range, reminderPage, reminderPageSize, mobileSurface));
   }
   return jsonError("没有找到该数据模块。", 404);
 }

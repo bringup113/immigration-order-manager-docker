@@ -93,6 +93,61 @@ test("mobile order detail uses a compact app layout with contextual actions", ()
   assert.doesNotMatch(cash, /登记实际收付/);
 });
 
+test("mobile workbench preserves context and never renders a stale order module", () => {
+  const dashboard = readFileSync("app/m/page.tsx", "utf8");
+  const search = readFileSync("app/m/search/page.tsx", "utf8");
+  const detailPage = readFileSync("app/m/orders/[orderNo]/page.tsx", "utf8");
+  const detail = readFileSync("components/mobile/mobile-order-detail.tsx", "utf8");
+
+  assert.match(dashboard, /useSearchParams/);
+  assert.match(dashboard, /sourceParams\.set\("range", range\)/);
+  assert.match(detailPage, /dashboardRange/);
+  assert.match(detail, /dataSection === tab/);
+  assert.match(detail, /正在读取当前模块/);
+  assert.match(search, /if \(!term\)/);
+  assert.match(search, /migra-mobile-search-state/);
+  assert.match(search, /Math\.min\(4000/);
+  assert.match(search, /projectId/);
+  assert.match(search, /agentId/);
+  assert.match(detail, /sectionReady/);
+});
+
+test("mobile high-frequency actions use precise filters, pagination and mobile-sized forms", () => {
+  const dashboard = readFileSync("lib/dashboard-query.ts", "utf8");
+  const orders = readFileSync("lib/order-list.ts", "utf8");
+  const home = readFileSync("app/m/page.tsx", "utf8");
+  const cash = readFileSync("components/mobile/mobile-cash-actions.tsx", "utf8");
+  const workflow = readFileSync("components/mobile/mobile-workflow-actions.tsx", "utf8");
+  const materials = readFileSync("components/mobile/mobile-materials.tsx", "utf8");
+
+  assert.match(dashboard, /source_id/);
+  assert.match(dashboard, /reminderPagination/);
+  assert.match(home, /继续查看提醒/);
+  assert.match(orders, /o\.project_id=\?/);
+  assert.match(orders, /o\.agent_id=\?/);
+  assert.match(cash, /!h-dvh/);
+  assert.match(workflow, /!h-dvh/);
+  assert.match(materials, /上传材料/);
+  assert.match(materials, /立即拍照/);
+  assert.match(materials, /放弃护照核对结果/);
+  assert.match(materials, /!h-dvh/);
+});
+
+test("mobile reads request section projections and skip desktop-only dashboard work", () => {
+  const detailClient = readFileSync("components/mobile/mobile-order-detail.tsx", "utf8");
+  const detailQuery = readFileSync("lib/order-detail-query.ts", "utf8");
+  const dashboardClient = readFileSync("app/m/page.tsx", "utf8");
+  const dashboardQuery = readFileSync("lib/dashboard-query.ts", "utf8");
+
+  assert.match(detailClient, /surface: "mobile"/);
+  assert.match(detailQuery, /mobileSurface/);
+  assert.match(detailQuery, /includeSteps/);
+  assert.match(detailQuery, /includePlans/);
+  assert.match(detailQuery, /includeMaterials/);
+  assert.match(dashboardClient, /surface=mobile/);
+  assert.match(dashboardQuery, /canReadFinance && !mobileSurface/);
+});
+
 test("desktop date label tolerates browser and Docker timezone boundaries", () => {
   const shell = readFileSync("components/app-shell.tsx", "utf8");
   assert.match(shell, /suppressHydrationWarning/);

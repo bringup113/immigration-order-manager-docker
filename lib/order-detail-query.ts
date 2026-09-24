@@ -24,11 +24,18 @@ export async function readOrderDetail(
   if (!order) return jsonError("订单不存在。", 404);
   const id = String(order.id);
   const section = params.get("section") || "all";
+  const mobileSurface = params.get("surface") === "mobile";
   const overview = section === "overview";
   const workflow = section === "all" || section === "workflow";
   const finance = section === "all" || section === "finance";
   const files =
     section === "all" || section === "people" || section === "common";
+  const includeMrz = !mobileSurface || section === "people" || section === "all";
+  const includeSteps = !mobileSurface || workflow || overview;
+  const includePlans = !mobileSurface || finance || overview;
+  const includeMaterials = !mobileSurface || files || overview;
+  const includeTotals = !mobileSurface || finance || overview;
+  const includeTasks = !mobileSurface || workflow || overview;
   const closure = overview || section === "all" || params.get("closure") === "1";
   const historyPage = Math.max(
     1,
@@ -63,18 +70,16 @@ export async function readOrderDetail(
       )
       .bind(id)
       .all(),
-    db
-      .prepare(
-        `SELECT DISTINCT ON (r.applicant_id) r.id,r.applicant_id,r.material_file_id,r.checksums_json,r.overall_status,r.created_at,r.confirmed_at,u.display_name AS confirmed_by_name
+    includeMrz
+      ? db.prepare(
+          `SELECT DISTINCT ON (r.applicant_id) r.id,r.applicant_id,r.material_file_id,r.checksums_json,r.overall_status,r.created_at,r.confirmed_at,u.display_name AS confirmed_by_name
       FROM applicant_mrz_records r JOIN users u ON u.id=r.confirmed_by WHERE r.order_id=? ORDER BY r.applicant_id,r.created_at DESC`,
-      )
-      .bind(id)
-      .all(),
-    db
-      .prepare("SELECT * FROM order_steps WHERE order_id=? ORDER BY sequence")
-      .bind(id)
-      .all(),
-    canReadFinance
+        ).bind(id).all()
+      : Promise.resolve({ results: [] }),
+    includeSteps
+      ? db.prepare("SELECT * FROM order_steps WHERE order_id=? ORDER BY sequence").bind(id).all()
+      : Promise.resolve({ results: [] }),
+    canReadFinance && includePlans
       ? db
           .prepare(
             `SELECT op.*,c.name AS channel_name,
@@ -88,10 +93,12 @@ export async function readOrderDetail(
           .bind(id)
           .all()
       : Promise.resolve({ results: [] }),
-    canReadMaterials
+    canReadMaterials && includeMaterials
       ? db
           .prepare(
-            "SELECT m.*,a.name AS applicant_name FROM order_materials m LEFT JOIN order_applicants a ON a.id=m.applicant_id WHERE m.order_id=? ORDER BY m.applicant_id,m.sequence",
+            `SELECT m.*,a.name AS applicant_name FROM order_materials m LEFT JOIN order_applicants a ON a.id=m.applicant_id
+            WHERE m.order_id=? ${mobileSurface && section === "people" ? "AND m.applicant_id IS NOT NULL" : mobileSurface && section === "common" ? "AND m.applicant_id IS NULL" : ""}
+            ORDER BY m.applicant_id,m.sequence`,
           )
           .bind(id)
           .all()
@@ -99,7 +106,10 @@ export async function readOrderDetail(
     canReadMaterials && files
       ? db
           .prepare(
-            "SELECT id,order_id,material_id,stored_name,relative_path,mime_type,size_bytes,sha256,uploaded_at,status,superseded_by_id,status_reason,status_changed_at,version FROM material_files WHERE order_id=? ORDER BY material_id,status='ACTIVE' DESC,uploaded_at DESC",
+            `SELECT f.id,f.order_id,f.material_id,f.stored_name,f.relative_path,f.mime_type,f.size_bytes,f.sha256,f.uploaded_at,f.status,f.superseded_by_id,f.status_reason,f.status_changed_at,f.version
+            FROM material_files f JOIN order_materials m ON m.id=f.material_id
+            WHERE f.order_id=? ${mobileSurface && section === "people" ? "AND m.applicant_id IS NOT NULL" : mobileSurface && section === "common" ? "AND m.applicant_id IS NULL" : ""}
+            ORDER BY f.material_id,f.status='ACTIVE' DESC,f.uploaded_at DESC`,
           )
           .bind(id)
           .all()
@@ -124,7 +134,7 @@ export async function readOrderDetail(
           .bind(id, (cashPage - 1) * 50)
           .all()
       : Promise.resolve({ results: [] }),
-    canReadFinance
+    canReadFinance && includeTotals
       ? db
           .prepare(
             `SELECT
@@ -135,7 +145,7 @@ export async function readOrderDetail(
           .bind(id)
           .first()
       : Promise.resolve(null),
-    hasPermission(user, "tasks.read")
+    hasPermission(user, "tasks.read") && includeTasks
       ? db
           .prepare(
             `SELECT t.*,u.display_name AS owner_name,u.username AS owner_username
@@ -145,7 +155,7 @@ export async function readOrderDetail(
           .bind(id)
           .all()
       : Promise.resolve({ results: [] }),
-    hasPermission(user, "orders.assign") || hasPermission(user, "tasks.write")
+    !mobileSurface && (hasPermission(user, "orders.assign") || hasPermission(user, "tasks.write"))
       ? db
           .prepare(
             "SELECT id,display_name,username FROM users WHERE active=1 ORDER BY display_name,username",

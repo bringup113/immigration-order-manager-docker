@@ -305,7 +305,6 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
     matchingPlans,
     cashValuesValid,
     changeCashValue,
-    setCalculatedCashField,
     changeCashCurrency,
     openPlan,
     openCash,
@@ -803,7 +802,6 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
         cashValuesValid={cashValuesValid}
         onCashChange={setCash}
         onCashValueChange={changeCashValue}
-        onCalculatedCashFieldChange={setCalculatedCashField}
         onCashCurrencyChange={changeCashCurrency}
         onCloseCash={() => {
           setDialog(null);

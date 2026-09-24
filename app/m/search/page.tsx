@@ -11,6 +11,8 @@ import { fetchApiJson, isAbortError } from "@/lib/api-client";
 import type { GlobalSearchGroup, GlobalSearchResponse } from "@/lib/api-contracts";
 import { orderDetailHref } from "@/lib/order-navigation";
 
+const searchStateKey = "migra-mobile-search-state";
+
 const groups = [
   { key: "orders", label: "订单", permission: "orders.read" },
   { key: "projects", label: "项目", permission: "projects.read" },
@@ -29,11 +31,24 @@ function MobileSearchContent() {
   const [term, setTerm] = useState("");
   const [data, setData] = useState<GlobalSearchResponse | null>(null);
   const [resultTerm, setResultTerm] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [groupLoading, setGroupLoading] = useState<GlobalSearchGroup | null>(null);
   const [revision, setRevision] = useState(0);
   const pageController = useRef<AbortController | null>(null);
+  const restoreTop = useRef<number | null>(null);
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(searchStateKey);
+    if (!saved) return;
+    try {
+      const state = JSON.parse(saved) as { query?: string; top?: number };
+      if (state.query) setInput(state.query);
+      if (Number.isFinite(state.top)) restoreTop.current = Number(state.top);
+    } catch {
+      sessionStorage.removeItem(searchStateKey);
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setTerm(input.trim()), 300);
@@ -42,6 +57,13 @@ function MobileSearchContent() {
 
   useEffect(() => {
     pageController.current?.abort();
+    if (!term) {
+      setLoading(false);
+      setNotice("");
+      setData(null);
+      setResultTerm("");
+      return;
+    }
     let disposed = false;
     let request: AbortController | null = null;
     let timer: number | undefined;
@@ -71,7 +93,7 @@ function MobileSearchContent() {
         setLoading(false);
         needsRefresh = Boolean(term && result.indexing);
         if (needsRefresh) {
-          const delay = Math.min(8000, 1000 * 2 ** Math.min(attempt++, 3));
+          const delay = Math.min(4000, 1000 * 2 ** Math.min(attempt++, 2));
           if (Date.now() + delay < deadline) timer = window.setTimeout(() => void search(), delay);
           else stop();
         } else window.clearTimeout(deadlineTimer);
@@ -100,6 +122,13 @@ function MobileSearchContent() {
     };
   }, [term, revision]);
 
+  useEffect(() => {
+    if (!resultTerm || restoreTop.current === null) return;
+    const top = restoreTop.current;
+    restoreTop.current = null;
+    requestAnimationFrame(() => window.scrollTo(0, top));
+  }, [resultTerm]);
+
   async function loadMore(group: GlobalSearchGroup) {
     const current = data?.pagination[group];
     if (!current?.hasMore || groupLoading || data?.indexing || !can(groups.find((item) => item.key === group)!.permission)) return;
@@ -108,7 +137,7 @@ function MobileSearchContent() {
     pageController.current = controller;
     setGroupLoading(group);
     try {
-      const params = new URLSearchParams({ q: term, group, page: String(current.page + 1), pageSize: String(current.pageSize) });
+      const params = new URLSearchParams({ q: resultTerm, group, page: String(current.page + 1), pageSize: String(current.pageSize) });
       const result = await fetchApiJson<GlobalSearchResponse>(`/api/data/search?${params}`, { cache: "no-store", signal: controller.signal });
       if (controller.signal.aborted) return;
       setData((old) => old ? ({
@@ -127,14 +156,16 @@ function MobileSearchContent() {
   }
 
   useEffect(() => () => pageController.current?.abort(), [term]);
-  const visibleData = data && (resultTerm === term || Boolean(notice)) ? data : null;
+  const visibleData = data && resultTerm ? data : null;
 
   return <MobileShell title="全局搜索">
     <div className="space-y-4">
-      <label className="relative block"><span className="sr-only">全局搜索关键词</span><SearchIcon size={19} className="absolute left-3 top-3 text-slate-400" /><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="姓名+金额，或输入文件名、项目…" className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-teal-500" /></label>
+      <label className="relative block"><span className="sr-only">全局搜索关键词</span><SearchIcon size={19} className="absolute left-3 top-3 text-slate-400" /><input value={input} onChange={(event) => { const next = event.target.value; setInput(next); sessionStorage.setItem(searchStateKey, JSON.stringify({ query: next, top: 0 })); }} placeholder="姓名+金额，或输入文件名、项目…" className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-teal-500" /></label>
       <p className="text-xs text-slate-500">用 + 连接多个关键词，可同时匹配订单的不同信息。</p>
+      {!term && <MobileMessage>输入订单、申请人、项目、代理、流程、收付款或材料信息开始搜索。</MobileMessage>}
       {notice && <MobileMessage tone="error">{notice} <button onClick={() => setRevision((value) => value + 1)} className="ml-2 font-semibold underline">刷新</button></MobileMessage>}
       {loading && !visibleData && <MobileMessage>正在搜索…</MobileMessage>}
+      {loading && visibleData && resultTerm !== term && <MobileMessage>正在搜索“{term}”，当前暂时显示“{resultTerm}”的结果。</MobileMessage>}
       {visibleData?.indexing && term && <MobileMessage>最新修改正在同步，结果将自动更新。</MobileMessage>}
       {visibleData && groups.filter((group) => can(group.permission) && visibleData.pagination[group.key].loaded).map((group) => {
         const entries = visibleData[group.key];
@@ -143,12 +174,17 @@ function MobileSearchContent() {
           <h2 className="px-1 text-sm font-semibold text-slate-700">{group.label} · {entries.length}</h2>
           {entries.map((item) => {
             const orderTarget = group.key === "orders" ? orderDetailHref((item as GlobalSearchResponse["orders"][number]).order_no, (item as GlobalSearchResponse["orders"][number]).target_tab, "mobile") : "";
-            const href = group.key === "orders" ? `${orderTarget}${orderTarget.includes("?") ? "&" : "?"}from=search` : "";
+            const relatedTarget = group.key === "projects"
+              ? new URLSearchParams({ projectId: (item as GlobalSearchResponse["projects"][number]).id, relatedLabel: (item as GlobalSearchResponse["projects"][number]).name })
+              : group.key === "agents"
+                ? new URLSearchParams({ agentId: (item as GlobalSearchResponse["agents"][number]).id, relatedLabel: (item as GlobalSearchResponse["agents"][number]).name })
+                : null;
+            const href = group.key === "orders" ? `${orderTarget}${orderTarget.includes("?") ? "&" : "?"}from=search` : `/m/orders?${relatedTarget}`;
             const title = group.key === "orders" ? `${(item as GlobalSearchResponse["orders"][number]).project_name} · ${(item as GlobalSearchResponse["orders"][number]).main_applicant || "未填写主申请人"}` : group.key === "projects" ? (item as GlobalSearchResponse["projects"][number]).name : (item as GlobalSearchResponse["agents"][number]).name;
             const detail = group.key === "orders" ? (item as GlobalSearchResponse["orders"][number]).match_summary : group.key === "projects" ? (item as GlobalSearchResponse["projects"][number]).country : (item as GlobalSearchResponse["agents"][number]).contact_name;
             const key = group.key === "orders" ? (item as GlobalSearchResponse["orders"][number]).order_no : (item as { id: string }).id;
-            const card = <MobileCard className={`flex items-center gap-3 ${href ? "active:bg-teal-50" : ""}`}><div className="min-w-0 flex-1"><p className="font-semibold text-slate-800">{title}</p>{detail && <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p>}{!href && <p className="mt-2 text-[11px] font-medium text-slate-400">手机端仅显示搜索摘要</p>}</div>{href && <ArrowRight size={17} className="shrink-0 text-slate-400" />}</MobileCard>;
-            return href ? <Link key={key} href={href} className="block">{card}</Link> : <div key={key}>{card}</div>;
+            const card = <MobileCard className="flex items-center gap-3 active:bg-teal-50"><div className="min-w-0 flex-1"><p className="font-semibold text-slate-800">{title}</p>{detail && <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p>}{group.key !== "orders" && <p className="mt-2 text-[11px] font-medium text-teal-700">查看精确关联订单</p>}</div><ArrowRight size={17} className="shrink-0 text-slate-400" /></MobileCard>;
+            return <Link key={key} href={href} className="block" onClick={() => sessionStorage.setItem(searchStateKey, JSON.stringify({ query: input, top: window.scrollY }))}>{card}</Link>;
           })}
           {entries.length === 0 && <p className="px-1 text-sm text-slate-400">暂无命中</p>}
           {page.hasMore && <button disabled={Boolean(groupLoading) || Boolean(visibleData.indexing) || resultTerm !== term} onClick={() => void loadMore(group.key)} className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm text-teal-700 disabled:opacity-50">{groupLoading === group.key ? "加载中…" : "继续查看"}</button>}

@@ -64,6 +64,7 @@ export type CashDraft = {
   baseAmount: string;
   ratePerUsd: string;
   calculatedField: CashCalculatedField;
+  inputOrder?: CashCalculatedField[];
   orderPlanId: string;
   notes: string;
 };

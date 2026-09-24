@@ -42,6 +42,20 @@ async function choose(page, trigger, optionName) {
     assert.equal(await financeTab.getAttribute("data-state"), "active");
     console.log("PASS reminder opens the finance tab");
 
+    await page.getByRole("button", { name: "登记收款" }).first().click();
+    const cashDialog = page.getByRole("dialog", { name: "登记收款" });
+    await cashDialog.waitFor();
+    await choose(page, cashDialog.getByRole("combobox").nth(1), /MYR/);
+    await cashDialog.getByLabel("原币金额（MYR）").fill("404");
+    assert.equal(await cashDialog.getByLabel("本位币金额（USD）").inputValue(), "100.00");
+    await cashDialog.getByLabel("本位币金额（USD）").fill("80");
+    assert.equal(await cashDialog.getByLabel("汇率（1 USD = ? MYR）").inputValue(), "5.05");
+    await cashDialog.getByLabel("汇率（1 USD = ? MYR）").fill("4.04");
+    assert.equal(await cashDialog.getByLabel("原币金额（MYR）").inputValue(), "323.20");
+    assert.equal(await cashDialog.getByText("改为自动计算").count(), 0);
+    await cashDialog.getByRole("button", { name: "取消" }).click();
+    console.log("PASS desktop cash fields infer the third value without a manual switch");
+
     await page.goto(`${base}/orders`);
     await page.getByRole("heading", { name: "订单管理" }).waitFor();
     const sortResponse = page.waitForResponse(

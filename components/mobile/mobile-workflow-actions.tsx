@@ -41,15 +41,23 @@ export function MobileWorkflowActions({
   const currentStep = steps.find((item) => item.status === "IN_PROGRESS");
   const [confirmStep, setConfirmStep] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
+  const [discardProgress, setDiscardProgress] = useState(false);
   const [form, setForm] = useState<ProgressForm>(blankProgress);
   const { pending, disabled, needsRefresh, uncertain, error, notice, submit, clearFeedback, acknowledge } =
     useMobileOrderMutation(orderNo, Number(order.version), readPending, onReload);
   const pairIsValid = Boolean(form.nextAction.trim()) === Boolean(form.followUpDate);
+  const progressDirty = Boolean(form.title || form.details || form.nextAction || form.followUpDate || form.progressDate !== localDateKey());
 
   function openProgress() {
     setForm(blankProgress());
     clearFeedback();
     setProgressOpen(true);
+  }
+
+  function closeProgress() {
+    if (pending) return;
+    if (progressDirty) setDiscardProgress(true);
+    else setProgressOpen(false);
   }
 
   return <section aria-label="办理操作"
@@ -86,8 +94,8 @@ export function MobileWorkflowActions({
       }}
     />
 
-    <Dialog open={progressOpen} onOpenChange={(open) => { if (!pending) setProgressOpen(open); }}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+    <Dialog open={progressOpen} onOpenChange={(open) => { if (open) setProgressOpen(true); else closeProgress(); }}>
+      <DialogContent className="!left-0 !top-0 !h-dvh !w-screen !max-w-none !translate-x-0 !translate-y-0 overflow-y-auto !rounded-none px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5">
         <DialogHeader>
           <DialogTitle>新增跟进</DialogTitle>
           <DialogDescription>记录本次沟通或事件。填写新的下一步及日期后，上一条未完成的跟进事项会结束。</DialogDescription>
@@ -107,11 +115,15 @@ export function MobileWorkflowActions({
           {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
           {uncertain && !readPending && <button type="button" onClick={acknowledge} className="text-xs font-semibold text-teal-700">已核对订单，继续操作</button>}
           <DialogFooter>
-            <button type="button" disabled={pending} onClick={() => setProgressOpen(false)} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm disabled:opacity-50">取消</button>
+            <button type="button" disabled={pending} onClick={closeProgress} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm disabled:opacity-50">取消</button>
             <button type="submit" disabled={disabled || !form.title.trim() || !pairIsValid} className="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-50">{pending ? "正在保存…" : "保存跟进"}</button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+    <ConfirmDialog open={discardProgress} onOpenChange={setDiscardProgress}
+      title="放弃未保存的跟进？" description="当前填写内容尚未保存，关闭后将无法恢复。"
+      confirmLabel="放弃并关闭" destructive pending={false}
+      onConfirm={() => { setDiscardProgress(false); setProgressOpen(false); setForm(blankProgress()); }} />
   </section>;
 }

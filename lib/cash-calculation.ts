@@ -72,6 +72,13 @@ type CashCalculationDraft = {
   calculatedField: CashCalculatedField;
 };
 
+type CashAutoDraft = CashCalculationDraft & {
+  currency: string;
+  inputOrder?: CashCalculatedField[];
+};
+
+const cashFields: CashCalculatedField[] = ["amount", "baseAmount", "ratePerUsd"];
+
 type CurrencyRate = {
   currency: string;
   rate_per_usd?: number;
@@ -91,6 +98,38 @@ export function withCashCalculation<T extends CashCalculationDraft>(next: T): T 
   if (next.calculatedField === "amount") return { ...next, amount: minorInput(calculated.amountMinor) };
   if (next.calculatedField === "baseAmount") return { ...next, baseAmount: minorInput(calculated.baseAmountMinor) };
   return { ...next, ratePerUsd: rateInput(calculated.rateScaled) };
+}
+
+export function withCashAutoInput<T extends CashAutoDraft>(current: T, field: CashCalculatedField, value: string): T {
+  if (current.currency === "USD") {
+    if (field === "ratePerUsd") return current;
+    return {
+      ...current,
+      amount: value,
+      baseAmount: value,
+      ratePerUsd: "1",
+      calculatedField: field === "amount" ? "baseAmount" : "amount",
+      inputOrder: [field],
+    };
+  }
+
+  const previous = current.inputOrder ?? cashFields.filter((candidate) => candidate !== current.calculatedField);
+  const inputOrder = [...previous.filter((candidate) => candidate !== field), field].slice(-2);
+  const calculatedField = cashFields.find((candidate) => !inputOrder.includes(candidate)) ?? current.calculatedField;
+  return withCashCalculation({ ...current, [field]: value, inputOrder, calculatedField });
+}
+
+export function withCashCurrency<T extends CashAutoDraft>(current: T, currency: string, ratePerUsd: string): T {
+  if (current.currency === currency) return current;
+  return {
+    ...current,
+    currency,
+    amount: "",
+    baseAmount: "",
+    ratePerUsd: currency === "USD" ? "1" : ratePerUsd,
+    calculatedField: "baseAmount",
+    inputOrder: currency === "USD" || !ratePerUsd ? [] : ["ratePerUsd"],
+  };
 }
 
 export function planMinorFromBase(baseAmountMinor: number, budgetRateScaled: number) {

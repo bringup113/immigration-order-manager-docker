@@ -454,53 +454,43 @@ function ApplicantMeta({ label, value }: { label: string; value: unknown }) {
   );
 }
 function CashCalculationInput({
+  id,
   label,
   value,
   auto,
-  autoDisabled = false,
   locked = false,
   step,
   onChange,
-  onAuto,
 }: {
+  id: string;
   label: string;
   value: string;
   auto: boolean;
-  autoDisabled?: boolean;
   locked?: boolean;
   step: string;
   onChange: (value: string) => void;
-  onAuto: () => void;
 }) {
   return (
     <div>
       <div className="flex min-h-6 items-center justify-between gap-2">
-        <Label>{label}</Label>
+        <Label htmlFor={id}>{label}</Label>
         {auto ? (
           <Badge
             variant="outline"
             className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
           >
-            自动计算
+            自动算出
           </Badge>
-        ) : (
-          !autoDisabled && (
-            <button
-              type="button"
-              onClick={onAuto}
-              className="text-[11px] text-teal-700 hover:underline"
-            >
-              改为自动计算
-            </button>
-          )
-        )}
+        ) : null}
       </div>
       <Input
+        id={id}
         className={`mt-2 ${auto ? "border-emerald-200 bg-emerald-50/50" : ""}`}
         type="number"
         min={step}
         step={step}
-        readOnly={auto || locked}
+        inputMode="decimal"
+        readOnly={locked}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />

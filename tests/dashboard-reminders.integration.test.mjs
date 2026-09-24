@@ -72,20 +72,20 @@ test("finance reminders follow active allocations in plan currency", {
     await db.query("TRUNCATE order_plans, order_cash_entries");
     await db.query("INSERT INTO order_plans VALUES ('p','o','RECEIVABLE',CURRENT_DATE,'plan',10000,10000)");
     await db.query(`
-      CREATE TEMP TABLE order_steps (order_id text,name text,due_date date,status text);
-      CREATE TEMP TABLE order_progress (order_id text,next_action text,title text,follow_up_date date,follow_up_done int);
+      CREATE TEMP TABLE order_steps (id text,order_id text,name text,due_date date,status text);
+      CREATE TEMP TABLE order_progress (id text,order_id text,next_action text,title text,follow_up_date date,follow_up_done int);
       CREATE TEMP TABLE order_materials (id text,order_id text,applicant_id text,name text,expected_date date);
       CREATE TEMP TABLE material_files (material_id text,status text);
-      CREATE TEMP TABLE order_tasks (order_id text,title text,due_date date,status text);
-      INSERT INTO order_steps VALUES ('o','step',CURRENT_DATE,'PENDING');
-      INSERT INTO order_progress VALUES ('o','follow','follow',CURRENT_DATE,0);
+      CREATE TEMP TABLE order_tasks (id text,order_id text,title text,due_date date,status text);
+      INSERT INTO order_steps VALUES ('s','o','step',CURRENT_DATE,'PENDING');
+      INSERT INTO order_progress VALUES ('g','o','follow','follow',CURRENT_DATE,0);
       INSERT INTO order_materials VALUES ('m1','o','person','personal',CURRENT_DATE),('m2','o',NULL,'common',CURRENT_DATE);
-      INSERT INTO order_tasks VALUES ('o','task',CURRENT_DATE,'OPEN');
+      INSERT INTO order_tasks VALUES ('t','o','task',CURRENT_DATE,'OPEN');
     `);
-    const fullQuery = `SELECT * FROM (${reminderSources}) scoped_reminders ORDER BY due_date,order_no LIMIT 30`;
+    const fullQuery = `SELECT * FROM (${reminderSources}) scoped_reminders ORDER BY due_date,reminder_type,order_no,source_id LIMIT 30`;
     const targets = Object.fromEntries((await db.query(fullQuery)).rows.map(row => [row.title, row.target_tab]));
     assert.deepEqual(targets, { plan: "finance", step: "workflow", follow: "workflow", personal: "people", common: "common", task: "workflow" });
-    await db.query("INSERT INTO order_steps SELECT 'o','extra-' || n,CURRENT_DATE-1,'PENDING' FROM generate_series(1,40) n");
+    await db.query("INSERT INTO order_steps SELECT 's-' || n,'o','extra-' || n,CURRENT_DATE-1,'PENDING' FROM generate_series(1,40) n");
     const counts = (await db.query(`SELECT COUNT(*) FILTER (WHERE due_date<CURRENT_DATE) AS overdue,COUNT(*) FILTER (WHERE due_date=CURRENT_DATE) AS today,COUNT(*) FILTER (WHERE due_date>CURRENT_DATE) AS week FROM (${reminderSources}) scoped_reminders`)).rows[0];
     assert.deepEqual([Number(counts.overdue), Number(counts.today), Number(counts.week)], [40, 6, 0], "counts include rows beyond the visible page");
     assert.equal((await db.query(fullQuery)).rows.length, 30, "the reminder list remains bounded");

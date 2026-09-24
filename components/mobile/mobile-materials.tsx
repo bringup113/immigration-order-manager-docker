@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from "react";
 import { Camera, Eye, FileUp, Images, ScanLine } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ImagePreview } from "@/components/image-preview";
 import type { Row } from "@/components/order-detail-ui";
 import { MobileMessage } from "@/components/mobile/mobile-states";
@@ -21,6 +22,7 @@ type Review = {
   mimeType: string;
   capture: PassportMrzCapture;
   fields: PassportIdentity;
+  initialFields: PassportIdentity;
 };
 
 type Props = {
@@ -54,12 +56,14 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
   const [preview, setPreview] = useState<Row | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [reviewChecked, setReviewChecked] = useState(false);
+  const [discardReview, setDiscardReview] = useState(false);
   const [uploading, setUploading] = useState("");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [uploadUncertain, setUploadUncertain] = useState(false);
   const [selectedApplicantId, setSelectedApplicantId] = useState("");
+  const [uploadTarget, setUploadTarget] = useState<{ material: Row; sectionName: string } | null>(null);
   const uploadInFlight = useRef(false);
   const mutation = useMobileOrderMutation(orderNo, version, readPending, onReload);
   const sections = common
@@ -82,8 +86,9 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
       const { recognizePassportFile } = await import("@/lib/passport-mrz");
       const capture = await recognizePassportFile(file);
       const current = applicants.find((item) => text(item, "id") === applicantId);
+      const fields = { ...capture.fields, name: text(current ?? {}, "name").trim() || capture.fields.name };
       setReview({ applicantId, materialFileId, storedName, mimeType, capture,
-        fields: { ...capture.fields, name: text(current ?? {}, "name").trim() || capture.fields.name } });
+        fields, initialFields: { ...fields } });
       setReviewChecked(false);
     } catch (reason) {
       setError(`${reason instanceof Error ? reason.message : "MRZ 识别失败。"} 文件已保留，可人工填写申请人资料。`);
@@ -148,6 +153,22 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
     });
   }
 
+  const reviewDirty = Boolean(review && (reviewChecked || JSON.stringify(review.fields) !== JSON.stringify(review.initialFields)));
+
+  function closeReview() {
+    if (mutation.pending) return;
+    if (reviewDirty) setDiscardReview(true);
+    else { setReview(null); setReviewChecked(false); }
+  }
+
+  function selectUploadFile(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files?.[0];
+    event.target.value = "";
+    const target = uploadTarget;
+    setUploadTarget(null);
+    if (target) void upload(target.material, selected);
+  }
+
   return <div className="space-y-3">
     <p className="px-1 text-xs leading-5 text-slate-500">
       支持 PDF、JPG/JPEG、PNG、WEBP，单个文件最多 20 MB。上传后按申请人与材料归档；
@@ -171,7 +192,7 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
         const isMain = applicants.find((item) => text(item, "id") === section.id)?.applicant_type === "MAIN";
         return <button key={section.id} type="button" role="tab" aria-selected={active}
           onClick={() => setSelectedApplicantId(section.id)}
-          className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${active
+          className={`min-h-11 shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${active
             ? "bg-teal-700 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"}`}>
           {section.name}{isMain ? " · 主申请人" : ""}
         </button>;
@@ -193,11 +214,6 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
           const materialId = text(material, "id");
           const currentFiles = activeFiles(files, materialId);
           const disabled = Boolean(uploading) || readPending || uploadUncertain;
-          const selectFile = (event: ChangeEvent<HTMLInputElement>) => {
-            const selected = event.target.files?.[0];
-            event.target.value = "";
-            void upload(material, selected);
-          };
           return <div key={materialId} className="border-t border-slate-100 px-4 py-3 first:border-0">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -209,38 +225,24 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
                   {currentFiles.length ? `已上传 ${currentFiles.length} 个文件` : "待上传"}
                 </p>
               </div>
-              {canWrite && <div className="flex shrink-0 gap-2">
-                <label className="flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-2 text-xs font-semibold text-teal-700">
-                  <Camera size={14} />拍照
-                  <input aria-label={`${section.name} ${text(material, "name")} 拍照上传`}
-                    className="sr-only" type="file" accept={imageTypes} capture="environment"
-                    disabled={disabled} onChange={selectFile} />
-                </label>
-                <label className="flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-2 text-xs font-semibold text-teal-700">
-                  <FileUp size={14} />选文件
-                  <input aria-label={`${section.name} ${text(material, "name")} 选择文件上传`}
-                    className="sr-only" type="file" accept={acceptedTypes}
-                    disabled={disabled} onChange={selectFile} />
-                </label>
-              </div>}
+              {canWrite && <button type="button" disabled={disabled}
+                aria-label={`${section.name} ${text(material, "name")} 上传材料`}
+                onClick={() => setUploadTarget({ material, sectionName: section.name })}
+                className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold text-teal-700 disabled:opacity-50">
+                <FileUp size={15} />上传
+              </button>}
             </div>
-            {canWrite && <label className="mt-2 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-teal-700">
-              <Images size={14} />从相册选择
-              <input aria-label={`${section.name} ${text(material, "name")} 从相册上传`}
-                className="sr-only" type="file" accept={imageTypes}
-                disabled={disabled} onChange={selectFile} />
-            </label>}
             {uploading === materialId && <p role="status" className="mt-2 text-xs text-teal-700">上传中…</p>}
             {currentFiles.map((file) => <div key={text(file, "id")}
               className="mt-2 flex items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs">
               <span className="min-w-0 flex-1 truncate text-slate-600">{text(file, "stored_name")}</span>
               <button type="button" onClick={() => setPreview(file)}
-                className="flex shrink-0 items-center gap-1 font-semibold text-teal-700">
+                className="flex min-h-11 shrink-0 items-center gap-1 px-1 font-semibold text-teal-700">
                 <Eye size={14} />预览
               </button>
               {canMrz && material.system_code === "PASSPORT_BIO_PAGE" && <button type="button"
                 disabled={scanning || readPending} onClick={() => void scanExisting(material, file)}
-                className="flex shrink-0 items-center gap-1 font-semibold text-teal-700 disabled:opacity-50">
+                className="flex min-h-11 shrink-0 items-center gap-1 px-1 font-semibold text-teal-700 disabled:opacity-50">
                 <ScanLine size={14} />识别
               </button>}
             </div>)}
@@ -249,6 +251,31 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
       </div> : <p className="px-4 py-5 text-sm text-slate-500">暂无所需材料。材料要求请在电脑端维护。</p>}
     </section>)}
     {scanning && <MobileMessage>正在识别护照 MRZ，请稍候…</MobileMessage>}
+    <Dialog open={Boolean(uploadTarget)} onOpenChange={(open) => { if (!open && !uploading) setUploadTarget(null); }}>
+      <DialogContent className="!bottom-0 !top-auto !w-full !max-w-[520px] !translate-y-0 rounded-b-none rounded-t-3xl p-5">
+        <DialogHeader>
+          <DialogTitle>上传{text(uploadTarget?.material ?? {}, "name")}</DialogTitle>
+          <DialogDescription>选择手机上的材料来源。拍照与相册仅接受图片，选文件也支持 PDF。</DialogDescription>
+        </DialogHeader>
+        {uploadTarget && <div className="grid gap-3">
+          <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 font-semibold text-slate-800">
+            <Camera size={20} className="text-teal-700" />立即拍照
+            <input aria-label={`${uploadTarget.sectionName} ${text(uploadTarget.material, "name")} 拍照上传`}
+              className="sr-only" type="file" accept={imageTypes} capture="environment" onChange={selectUploadFile} />
+          </label>
+          <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 font-semibold text-slate-800">
+            <Images size={20} className="text-teal-700" />从相册选择
+            <input aria-label={`${uploadTarget.sectionName} ${text(uploadTarget.material, "name")} 从相册上传`}
+              className="sr-only" type="file" accept={imageTypes} onChange={selectUploadFile} />
+          </label>
+          <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 font-semibold text-slate-800">
+            <FileUp size={20} className="text-teal-700" />选择文件
+            <input aria-label={`${uploadTarget.sectionName} ${text(uploadTarget.material, "name")} 选择文件上传`}
+              className="sr-only" type="file" accept={acceptedTypes} onChange={selectUploadFile} />
+          </label>
+        </div>}
+      </DialogContent>
+    </Dialog>
     <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}>
       <DialogContent className="flex h-[90dvh] w-[calc(100vw-1rem)] max-w-4xl flex-col p-3 sm:p-5">
         <DialogHeader>
@@ -265,10 +292,8 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
             title={`预览 ${text(preview, "stored_name")}`} />)}
       </DialogContent>
     </Dialog>
-    <Dialog open={Boolean(review)} onOpenChange={(open) => {
-      if (!open && !mutation.pending) { setReview(null); setReviewChecked(false); }
-    }}>
-      <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6">
+    <Dialog open={Boolean(review)} onOpenChange={(open) => { if (!open) closeReview(); }}>
+      <DialogContent className="!left-0 !top-0 !h-dvh !w-screen !max-w-none !translate-x-0 !translate-y-0 overflow-y-auto !rounded-none px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5">
         <DialogHeader>
           <DialogTitle>核对护照识别结果</DialogTitle>
           <DialogDescription>识别只是辅助。请逐项对照护照原件，确认后才会修改申请人资料。</DialogDescription>
@@ -287,13 +312,13 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
               ["documentCode", "证件类型"], ["personalNumber", "个人号码/可选数据"],
             ] as const).map(([key, label]) => <label key={key} className="text-xs font-medium text-slate-600">
               {label}
-              <input className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+              <input className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
                 type={key === "birthDate" || key === "passportExpiry" ? "date" : "text"}
                 value={review.fields[key]} onChange={(event) => updateField(key, event.target.value)} />
             </label>)}
             <label className="text-xs font-medium text-slate-600">
               性别
-              <select className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
+              <select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 p-2 text-sm"
                 value={review.fields.sex} onChange={(event) => updateField("sex", event.target.value)}>
                 <option value="">未填写</option><option value="M">男</option>
                 <option value="F">女</option><option value="X">未指定</option>
@@ -322,9 +347,9 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
                 src={`/api/material-files/${encodeURIComponent(review.materialFileId)}#toolbar=0`}
                 title="护照文件预览" />}
           </details>
-          <label className="flex items-start gap-2 text-xs text-slate-700">
+          <label className="flex min-h-11 items-center gap-3 text-xs text-slate-700">
             <input type="checkbox" checked={reviewChecked}
-              onChange={(event) => setReviewChecked(event.target.checked)} className="mt-0.5" />
+              onChange={(event) => setReviewChecked(event.target.checked)} className="size-5 shrink-0" />
             我已对照护照原件逐项核对上述资料
           </label>
           {mutation.error && <MobileMessage tone="error">{mutation.error}</MobileMessage>}
@@ -340,5 +365,9 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
         </div>}
       </DialogContent>
     </Dialog>
+    <ConfirmDialog open={discardReview} onOpenChange={setDiscardReview}
+      title="放弃护照核对结果？" description="当前修改或核对状态尚未登记，关闭后需要重新识别和核对。"
+      confirmLabel="放弃并关闭" destructive pending={false}
+      onConfirm={() => { setDiscardReview(false); setReview(null); setReviewChecked(false); }} />
   </div>;
 }

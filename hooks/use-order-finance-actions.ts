@@ -15,8 +15,8 @@ import type {
 import {
   calculateCashValues,
   defaultCashRate,
-  withCashCalculation,
-  type CashCalculatedField,
+  withCashAutoInput,
+  withCashCurrency,
 } from "@/lib/cash-calculation";
 
 type UseOrderFinanceActionsOptions = {
@@ -61,6 +61,7 @@ export function useOrderFinanceActions({
     baseAmount: "",
     ratePerUsd: "1",
     calculatedField: "baseAmount",
+    inputOrder: [],
     orderPlanId: "",
     notes: "",
   });
@@ -73,22 +74,11 @@ export function useOrderFinanceActions({
     field: "amount" | "baseAmount" | "ratePerUsd",
     value: string,
   ) {
-    setCash((current) => withCashCalculation({ ...current, [field]: value }));
-  }
-
-  function setCalculatedCashField(calculatedField: CashCalculatedField) {
-    setCash((current) => withCashCalculation({ ...current, calculatedField }));
+    setCash((current) => withCashAutoInput(current, field, value));
   }
 
   function changeCashCurrency(currency: string) {
-    setCash((current) =>
-      withCashCalculation({
-        ...current,
-        currency,
-        ratePerUsd: rateFor(currency),
-        calculatedField: "baseAmount",
-      }),
-    );
+    setCash((current) => withCashCurrency(current, currency, rateFor(currency)));
   }
 
   function openPlan(row?: Row) {
@@ -140,6 +130,7 @@ export function useOrderFinanceActions({
             baseAmount: String(Number(row.base_amount_minor) / 100),
             ratePerUsd: String(row.rate_per_usd),
             calculatedField: "baseAmount",
+            inputOrder: ["ratePerUsd", "amount"],
             orderPlanId: String(row.order_plan_id || ""),
             notes: String(row.notes || ""),
           }
@@ -152,6 +143,7 @@ export function useOrderFinanceActions({
             baseAmount: "",
             ratePerUsd: rateFor(currency),
             calculatedField: "baseAmount",
+            inputOrder: currency === "USD" || !rateFor(currency) ? [] : ["ratePerUsd"],
             orderPlanId: "",
             notes: "",
           },
@@ -175,6 +167,7 @@ export function useOrderFinanceActions({
   function saveCashEntry() {
     const payload = { ...cash };
     delete payload.autoDescription;
+    delete payload.inputOrder;
     return run(
       {
         action: "saveCashEntry",
@@ -246,7 +239,6 @@ export function useOrderFinanceActions({
     matchingPlans,
     cashValuesValid: Boolean(calculateCashValues(cash)),
     changeCashValue,
-    setCalculatedCashField,
     changeCashCurrency,
     openPlan,
     openCash,
