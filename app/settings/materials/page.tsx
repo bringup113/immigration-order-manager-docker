@@ -82,7 +82,7 @@ const blankForm = {
 export default function MaterialsPage() {
   const can = usePermissions();
   const canWrite = can("material_catalog.write");
-  const canCheckFiles = can("materials.write");
+  const canCheckFiles = can("system.file_integrity");
   const [rows, setRows] = useState<MaterialRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

@@ -32,9 +32,11 @@ export async function GET(request: NextRequest) {
       actor_user_id=? OR
       (entity_type='ORDER' AND EXISTS (SELECT 1 FROM orders o WHERE o.order_no=audit_logs.entity_id AND o.owner_user_id=?)) OR
       (entity_type='TASK' AND EXISTS (SELECT 1 FROM order_tasks t JOIN orders o ON o.id=t.order_id WHERE t.id=audit_logs.entity_id AND o.owner_user_id=?)) OR
-      (entity_type='MATERIAL_FILE' AND EXISTS (SELECT 1 FROM material_files f JOIN orders o ON o.id=f.order_id WHERE f.id=audit_logs.entity_id AND o.owner_user_id=?))
+      (entity_type='MATERIAL_FILE' AND EXISTS (SELECT 1 FROM material_files f JOIN orders o ON o.id=f.order_id WHERE f.id=audit_logs.entity_id AND o.owner_user_id=?)) OR
+      (entity_type IN ('APPLICANT','APPLICANT_MRZ') AND EXISTS (SELECT 1 FROM order_applicants a JOIN orders o ON o.id=a.order_id WHERE a.id=audit_logs.entity_id AND o.owner_user_id=?)) OR
+      (entity_type='CASH_ENTRY' AND EXISTS (SELECT 1 FROM order_cash_entries c JOIN orders o ON o.id=c.order_id WHERE c.id=audit_logs.entity_id AND o.owner_user_id=?))
     )`);
-    values.push(auth.user.id, auth.user.id, auth.user.id, auth.user.id);
+    values.push(auth.user.id, auth.user.id, auth.user.id, auth.user.id, auth.user.id, auth.user.id);
   }
 
   if (actor) where("actor_username_snapshot=?", actor);

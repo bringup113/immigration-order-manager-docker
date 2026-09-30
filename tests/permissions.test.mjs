@@ -39,3 +39,10 @@ test("restoring historical finance and material records includes write and read 
   assert.deepEqual(new Set(validPermissions(["finance.restore"])), new Set(["finance.restore", "finance.write", "finance.read", "orders.read"]));
   assert.deepEqual(new Set(validPermissions(["materials.restore"])), new Set(["materials.restore", "materials.write", "materials.read", "orders.read"]));
 });
+
+test("file integrity checks use a dedicated read-only operations permission", () => {
+  assert.deepEqual(
+    new Set(validPermissions(["system.file_integrity"])),
+    new Set(["system.file_integrity", "material_catalog.read", "materials.read", "orders.read"]),
+  );
+});

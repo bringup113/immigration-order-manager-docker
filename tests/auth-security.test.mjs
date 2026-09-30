@@ -9,9 +9,10 @@ const ownerUsername = process.env.MIGRA_TEST_USERNAME;
 const ownerPassword = process.env.MIGRA_TEST_PASSWORD;
 const enabled = Boolean(baseUrl && databaseUrl && ownerUsername && ownerPassword);
 
-async function rawLogin(username, password, mfaCode = "") {
+async function rawLogin(username, password, mfaCode = "", forwardedIp = "") {
   const response = await fetch(baseUrl + "/api/auth/login", {
     method: "POST",
+    headers: forwardedIp ? { "x-forwarded-for": forwardedIp } : undefined,
     body: new URLSearchParams({ username, password, mfa_code: mfaCode, return_to: "/" }),
     redirect: "manual",
   });
@@ -31,6 +32,31 @@ function encodedPassword(password) {
   const derived = pbkdf2Sync(password, salt, 600_000, 32, "sha256");
   return "pbkdf2-sha256$600000$" + salt.toString("base64url") + "$" + derived.toString("base64url");
 }
+
+test("concurrent login failures are counted atomically", { skip: !enabled }, async () => {
+  const database = new pg.Client({ connectionString: databaseUrl });
+  await database.connect();
+  const username = `missing_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const forwardedIp = "203.0.113.42";
+  const pairKey = `pair:${forwardedIp}:${username}`;
+  try {
+    const attempts = await Promise.all(
+      Array.from({ length: 4 }, () => rawLogin(username, "Definitely-Wrong-Password!", "", forwardedIp)),
+    );
+    assert.equal(attempts.every((response) => response.status === 303), true);
+    const row = await database.query(
+      "SELECT attempt_count,blocked_until FROM auth_rate_limits WHERE rate_key=$1",
+      [pairKey],
+    );
+    assert.equal(row.rowCount, 1);
+    assert.equal(Number(row.rows[0].attempt_count), 4);
+    assert.equal(row.rows[0].blocked_until, null);
+  } finally {
+    await database.query("DELETE FROM auth_rate_limits WHERE rate_key=$1 OR rate_key=$2", [pairKey, `ip:${forwardedIp}`]).catch(() => undefined);
+    await database.query("DELETE FROM audit_logs WHERE actor_username_snapshot=$1", [username]).catch(() => undefined);
+    await database.end();
+  }
+});
 
 function totp(secret) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";

@@ -7,6 +7,7 @@ const baseUrl = process.env.MIGRA_BASE_URL;
 const username = process.env.MIGRA_TEST_USERNAME;
 const password = process.env.MIGRA_TEST_PASSWORD;
 const uploadRoot = process.env.MIGRA_TEST_UPLOAD_ROOT;
+const fakeSidecarPort = Number(process.env.MIGRA_MRZ_FAKE_PORT || 9999);
 const enabled =
   process.env.MIGRA_MRZ_TRANSFER_TEST === "1" &&
   Boolean(baseUrl && username && password);
@@ -32,13 +33,14 @@ test(
     const jobs = new Map();
     let server;
 
-    const upload = (bytes) => {
+    const upload = (bytes, signal) => {
       const form = new FormData();
       form.set("file", new Blob([bytes], { type: "image/png" }), "护照.png");
       return fetch(`${baseUrl}/api/mrz/scan`, {
         method: "POST",
         headers: { cookie },
         body: form,
+        signal,
       });
     };
 
@@ -73,15 +75,27 @@ test(
         }
         response.writeHead(404).end();
       });
-      await new Promise((resolve) => server.listen(9999, "0.0.0.0", resolve));
+      await new Promise((resolve) => server.listen(fakeSidecarPort, "0.0.0.0", resolve));
 
+      const abortController = new AbortController();
+      const cancelled = await upload(png, abortController.signal);
+      const cancellationDeadline = Date.now() + 5_000;
+      while (jobs.size < 1 && Date.now() < cancellationDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(jobs.size, 1);
+      abortController.abort();
+      await cancelled.text().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const jobsBeforeActiveRequests = jobs.size;
       const first = await upload(png);
       const second = await upload(png);
       const deadline = Date.now() + 5_000;
-      while (jobs.size < 2 && Date.now() < deadline) {
+      while (jobs.size < jobsBeforeActiveRequests + 2 && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      assert.equal(jobs.size, 2);
+      assert.equal(jobs.size, jobsBeforeActiveRequests + 2);
       assert.equal((await upload(png)).status, 429);
 
       for (const job of jobs.values()) job.completed = true;

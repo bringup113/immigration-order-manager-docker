@@ -77,6 +77,7 @@ test("file lifecycle and integrity checks are audited", () => {
     assert.match(upload, new RegExp(action));
   for (const action of ["MATERIAL_FILE_VOID", "MATERIAL_FILE_RESTORE"])
     assert.match(lifecycle, new RegExp(action));
+  assert.match(integrity, /requireApiUser\("system\.file_integrity"\)/);
   assert.match(integrity, /FILE_INTEGRITY_CHECK/);
   assert.match(restore, /'FILE_INTEGRITY_CHECK','SYSTEM','FAILURE'/);
 });

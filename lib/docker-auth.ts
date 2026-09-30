@@ -85,17 +85,26 @@ async function recordLoginFailure(username: string, ip?: string) {
   const db = getDatabase();
   const now = new Date();
   const nowText = now.toISOString();
-  for (const scope of loginRateScopes(username, ip)) {
-    const row = await db.prepare("SELECT attempt_count,window_started_at FROM auth_rate_limits WHERE rate_key=?").bind(scope.key).first();
-    const currentWindow = row?.window_started_at && now.getTime() - new Date(String(row.window_started_at)).getTime() < LOGIN_WINDOW_MS;
-    const attempts = currentWindow ? Number(row?.attempt_count || 0) + 1 : 1;
-    const windowStartedAt = currentWindow ? String(row?.window_started_at) : nowText;
-    const blockedUntil = attempts >= scope.limit ? new Date(now.getTime() + LOGIN_BLOCK_MS).toISOString() : null;
-    await db.prepare(`INSERT INTO auth_rate_limits (rate_key,attempt_count,window_started_at,blocked_until,updated_at) VALUES (?,?,?,?,?)
-      ON CONFLICT(rate_key) DO UPDATE SET attempt_count=excluded.attempt_count,window_started_at=excluded.window_started_at,blocked_until=excluded.blocked_until,updated_at=excluded.updated_at`)
-      .bind(scope.key, attempts, windowStartedAt, blockedUntil, nowText).run();
-  }
-  await db.prepare("DELETE FROM auth_rate_limits WHERE updated_at<?").bind(new Date(now.getTime() - 30 * 86_400_000).toISOString()).run();
+  const windowCutoff = new Date(now.getTime() - LOGIN_WINDOW_MS).toISOString();
+  const blockedUntil = new Date(now.getTime() + LOGIN_BLOCK_MS).toISOString();
+  await db.transaction(async (tx) => {
+    for (const scope of loginRateScopes(username, ip)) {
+      await tx.prepare(`INSERT INTO auth_rate_limits
+        (rate_key,attempt_count,window_started_at,blocked_until,updated_at)
+        VALUES (?,1,?,NULL,?)
+        ON CONFLICT(rate_key) DO UPDATE SET
+          attempt_count=CASE WHEN auth_rate_limits.window_started_at>=? THEN auth_rate_limits.attempt_count+1 ELSE 1 END,
+          window_started_at=CASE WHEN auth_rate_limits.window_started_at>=? THEN auth_rate_limits.window_started_at ELSE excluded.window_started_at END,
+          blocked_until=CASE WHEN
+            (CASE WHEN auth_rate_limits.window_started_at>=? THEN auth_rate_limits.attempt_count+1 ELSE 1 END)>=?
+            THEN CAST(? AS timestamptz) ELSE NULL END,
+          updated_at=excluded.updated_at`)
+        .bind(scope.key, nowText, nowText, windowCutoff, windowCutoff, windowCutoff, scope.limit, blockedUntil)
+        .run();
+    }
+    await tx.prepare("DELETE FROM auth_rate_limits WHERE updated_at<?")
+      .bind(new Date(now.getTime() - 30 * 86_400_000).toISOString()).run();
+  });
 }
 
 async function clearSuccessfulLoginRate(username: string, ip?: string) {

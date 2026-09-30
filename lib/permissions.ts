@@ -12,6 +12,7 @@ export const PERMISSION_GROUPS = [
   { label: "材料库", permissions: [["material_catalog.read", "查看材料库"], ["material_catalog.write", "管理材料库"]] },
   { label: "用户与角色", permissions: [["users.read", "查看用户"], ["users.write", "管理普通用户"], ["roles.read", "查看角色"], ["roles.write", "管理自定义角色"]] },
   { label: "操作日志", permissions: [["audit.read", "查看操作日志"], ["audit.export", "导出操作日志"]] },
+  { label: "系统运维", permissions: [["system.file_integrity", "检查附件一致性"]] },
 ] as const;
 
 export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((group) => group.permissions.map(([code]) => code));
@@ -42,6 +43,7 @@ const PERMISSION_DEPENDENCIES: Record<string, string[]> = {
   "users.write": ["users.read", "roles.read"],
   "roles.write": ["roles.read"],
   "audit.export": ["audit.read"],
+  "system.file_integrity": ["material_catalog.read", "materials.read", "orders.read"],
 };
 
 export function validPermissions(values: unknown) {

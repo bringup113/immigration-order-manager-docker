@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 let activeCheck: ReturnType<typeof checkFileIntegrity> | undefined;
 
 export async function GET(request: Request) {
-  const auth = await requireApiUser("materials.write");
+  const auth = await requireApiUser("system.file_integrity");
   if (auth.response) return auth.response;
   try {
     activeCheck ??= checkFileIntegrity().finally(()=>{activeCheck=undefined;});

@@ -76,10 +76,34 @@ export async function POST(request: NextRequest) {
     const receivedAt = performance.now();
     const sidecarUrl = (process.env.MRZ_SIDECAR_URL || "http://mrzscanner_poc:8080").replace(/\/$/, "");
     const encoder = new TextEncoder();
+    const cancellation = new AbortController();
+    let responseCancelled = false;
+    let responseClosed = false;
+    const stopResponse = () => {
+      responseCancelled = true;
+      if (!cancellation.signal.aborted) cancellation.abort();
+    };
     const responseStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const send = (event: Record<string, unknown>) =>
-          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        const send = (event: Record<string, unknown>) => {
+          if (responseCancelled || responseClosed) return false;
+          try {
+            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+            return true;
+          } catch {
+            stopResponse();
+            return false;
+          }
+        };
+        const closeResponse = () => {
+          if (responseCancelled || responseClosed) return;
+          responseClosed = true;
+          try {
+            controller.close();
+          } catch {
+            stopResponse();
+          }
+        };
         void (async () => {
           let payload: Record<string, unknown> = {};
           const sidecarStartedAt = performance.now();
@@ -95,7 +119,7 @@ export async function POST(request: NextRequest) {
               },
               body: stream as unknown as BodyInit,
               duplex: "half",
-              signal: AbortSignal.timeout(15_000),
+              signal: AbortSignal.any([cancellation.signal, AbortSignal.timeout(15_000)]),
             } as RequestInit & {duplex: "half"});
             const createdPayload = await created.json().catch(() => ({})) as Record<string, unknown>;
             if (!created.ok || typeof createdPayload.job_id !== "string") {
@@ -108,9 +132,10 @@ export async function POST(request: NextRequest) {
             let previousStage = "";
             const deadline = Date.now() + 65_000;
             while (Date.now() < deadline) {
+              if (cancellation.signal.aborted) return;
               const statusResponse = await fetch(`${sidecarUrl}/jobs/${encodeURIComponent(jobId)}`, {
                 cache: "no-store",
-                signal: AbortSignal.timeout(3_000),
+                signal: AbortSignal.any([cancellation.signal, AbortSignal.timeout(3_000)]),
               });
               const statusPayload = await statusResponse.json().catch(() => ({})) as Record<string, unknown>;
               if (!statusResponse.ok) throw new DomainError("MRZ 识别任务状态读取失败。", 503);
@@ -156,6 +181,7 @@ export async function POST(request: NextRequest) {
             }));
             send({ type: "result", payload });
           } catch (error) {
+            if (cancellation.signal.aborted) return;
             await writeAuditBestEffort(request, auth.user!, {
               action: "APPLICANT_MRZ_SCAN",
               entityType: "APPLICANT_MRZ",
@@ -168,11 +194,14 @@ export async function POST(request: NextRequest) {
             });
           } finally {
             await finalize();
-            controller.close();
+            closeResponse();
           }
         })();
       },
-      async cancel() { await finalize(); },
+      async cancel() {
+        stopResponse();
+        await finalize();
+      },
     });
     return new Response(responseStream, {
       status: 200,

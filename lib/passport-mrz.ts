@@ -1,3 +1,5 @@
+import { mrzDateToIso } from "@/lib/mrz-date";
+
 export type PassportIdentity = {
   name: string;
   surname: string;
@@ -158,17 +160,6 @@ export async function recognizePassportFile(
     options.onStageChange?.(progress.stage);
     options.onProgress?.(progress);
   };
-  const isoDate = (value: unknown) => {
-    const text = String(value || "").trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-    if (!/^\d{6}$/.test(text)) return "";
-    const year = Number(text.slice(0, 2));
-    const month = text.slice(2, 4);
-    const day = text.slice(4, 6);
-    const currentYear = new Date().getUTCFullYear() % 100;
-    const fullYear = year <= currentYear + 10 ? 2000 + year : 1900 + year;
-    return `${fullYear}-${month}-${day}`;
-  };
   const sexCode = (value: unknown): PassportIdentity["sex"] => {
     const text = String(value || "").toLowerCase();
     return text === "m" || text === "male" ? "M" : text === "f" || text === "female" ? "F" : text ? "X" : "";
@@ -288,8 +279,8 @@ export async function recognizePassportFile(
         name: [surname, givenNames].filter(Boolean).join(" "), surname, givenNames,
         nationality: String(parsedFields.nationality || ""),
         passportNo: String(parsed.documentNumber || parsedFields.documentNumber || "").replace(/\s+/g, "").toUpperCase(),
-        birthDate: isoDate(parsedFields.birthDate), sex: sexCode(parsedFields.sex),
-        passportExpiry: isoDate(parsedFields.expirationDate),
+        birthDate: mrzDateToIso(parsedFields.birthDate, "birth"), sex: sexCode(parsedFields.sex),
+        passportExpiry: mrzDateToIso(parsedFields.expirationDate, "expiry"),
         issuingCountry: String(parsedFields.issuingState || parsedFields.issuingCountry || ""),
         documentCode: String(parsedFields.documentCode || ""), personalNumber: String(parsedFields.personalNumber || ""),
       },

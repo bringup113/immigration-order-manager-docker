@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parse } from "mrz";
+import { mrzDateToIso } from "../lib/mrz-date.ts";
 
 const specimen = [
   "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
@@ -24,4 +25,13 @@ test("server parser preserves a parse result when a checksum is invalid", () => 
   const result = parse(invalid);
   assert.equal(result.valid, false);
   assert.equal(result.details.some((item) => item.valid === false), true);
+});
+
+test("MRZ birth and expiry dates use field-specific century rules", () => {
+  const today = new Date("2026-09-30T00:00:00Z");
+  assert.equal(mrzDateToIso("300101", "birth", today), "1930-01-01");
+  assert.equal(mrzDateToIso("250101", "birth", today), "2025-01-01");
+  assert.equal(mrzDateToIso("390101", "expiry", today), "2039-01-01");
+  assert.equal(mrzDateToIso("120415", "expiry", today), "2012-04-15");
+  assert.equal(mrzDateToIso("260230", "expiry", today), "");
 });

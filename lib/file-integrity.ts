@@ -5,6 +5,11 @@ import { getDatabase } from "@/db/database";
 import type { AppDatabase } from "@/db/driver";
 
 type FileRow = { id: string; relative_path: string; stored_name: string; size_bytes: number | string; sha256: string | null };
+const YIELD_EVERY_FILES = 20;
+
+function yieldToRuntime() {
+  return new Promise<void>((resolveYield) => setImmediate(resolveYield));
+}
 
 async function walk(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
@@ -33,7 +38,7 @@ export async function checkFileIntegrity(db: AppDatabase = getDatabase()) {
   const sizeMismatches: unknown[] = [];
   const hashMismatches: unknown[] = [];
 
-  for (const row of rows.results) {
+  for (const [index, row] of rows.results.entries()) {
     const relativePath = String(row.relative_path);
     if (!diskSet.has(relativePath)) {
       missing.push({ id: row.id, relativePath, storedName: row.stored_name });
@@ -45,6 +50,7 @@ export async function checkFileIntegrity(db: AppDatabase = getDatabase()) {
     if (!row.sha256) missingChecksums.push({ id: row.id, relativePath, actualSha256 });
     else if (row.sha256.toLowerCase() !== actualSha256) hashMismatches.push({ id: row.id, relativePath, expectedSha256: row.sha256, actualSha256 });
     if (Number(row.size_bytes) !== fileStat.size) sizeMismatches.push({ id: row.id, relativePath, expectedBytes: Number(row.size_bytes), actualBytes: fileStat.size });
+    if ((index + 1) % YIELD_EVERY_FILES === 0) await yieldToRuntime();
   }
 
   const orphans = relativePaths.filter((path) => !indexed.has(path)).map((relativePath) => ({

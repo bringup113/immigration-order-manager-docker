@@ -363,7 +363,7 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     const now = new Date().toISOString();
     await database.query(`INSERT INTO roles (id,code,name,description,is_system,active,order_scope,created_at,updated_at)
       VALUES ($1,$2,$3,'集成测试本人订单角色',0,1,'OWN',$4,$4)`, [roleId, `TEST_OWN_${suffix}`, `测试业务员 ${suffix}`, now]);
-    for (const permission of ["dashboard.read", "orders.read", "orders.write", "tasks.read", "tasks.write", "finance.read", "finance.write", "materials.read", "agents.read", "projects.read"]) {
+    for (const permission of ["dashboard.read", "orders.read", "orders.write", "tasks.read", "tasks.write", "finance.read", "finance.write", "materials.read", "agents.read", "projects.read", "audit.read"]) {
       await database.query("INSERT INTO role_permissions (role_id,permission) VALUES ($1,$2)", [roleId, permission]);
     }
 
@@ -397,6 +397,17 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
       VALUES ($1,$2,'RECEIPT',CURRENT_DATE,'本人订单收款','USD',12345,100000000,12345,$3,$3),
              ($4,$5,'RECEIPT',CURRENT_DATE,'他人订单收款','USD',98765,100000000,98765,$3,$3)`,
       [`test_cash_own_${suffix}`, ownOrderId, now, `test_cash_other_${suffix}`, otherOrderId]);
+    const scopedAuditAction = `TEST_SCOPE_${suffix}`;
+    await database.query(`INSERT INTO audit_logs
+      (id,occurred_at,actor_user_id,actor_username_snapshot,action,entity_type,entity_id,result,summary,request_id)
+      VALUES ($1,$2,$3,$4,$5,'APPLICANT',$6,'SUCCESS','本人申请人范围测试',$7),
+             ($8,$2,$3,$4,$5,'APPLICANT',$9,'SUCCESS','他人申请人范围测试',$10),
+             ($11,$2,$3,$4,$5,'CASH_ENTRY',$12,'SUCCESS','本人收付款范围测试',$13),
+             ($14,$2,$3,$4,$5,'CASH_ENTRY',$15,'SUCCESS','他人收付款范围测试',$16)`,
+      [`test_aud_scope_own_app_${suffix}`, now, ownerId, username, scopedAuditAction, ownApplicantId, `test_req_1_${suffix}`,
+       `test_aud_scope_other_app_${suffix}`, otherApplicantId, `test_req_2_${suffix}`,
+       `test_aud_scope_own_cash_${suffix}`, `test_cash_own_${suffix}`, `test_req_3_${suffix}`,
+       `test_aud_scope_other_cash_${suffix}`, `test_cash_other_${suffix}`, `test_req_4_${suffix}`]);
     await database.query("INSERT INTO order_materials (id,order_id,applicant_id,name,required,sequence) VALUES ($1,$2,$3,'他人护照',1,0)", [otherMaterialId, otherOrderId, otherApplicantId]);
     await database.query(`INSERT INTO material_files (id,order_id,material_id,original_name,stored_name,relative_path,mime_type,size_bytes,uploaded_at,sha256)
       VALUES ($1,$2,$3,'other.pdf','other.pdf',$4,'application/pdf',4,$5,$6)`,
@@ -410,6 +421,11 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     assert.equal((await assign(ownerId, 2)).status, 200);
 
     const ownCookie = await loginAs(userName, userPassword);
+    const scopedAudit = await getJson(`/api/admin/audit?action=${encodeURIComponent(scopedAuditAction)}`, ownCookie);
+    assert.deepEqual(
+      new Set(scopedAudit.rows.map((row) => row.entity_id)),
+      new Set([ownApplicantId, `test_cash_own_${suffix}`]),
+    );
     const ownOrders = await getOrderRows(ownCookie);
     assert.deepEqual(ownOrders.map((order) => order.order_no), [ownOrderNo]);
     assert.equal(Number(ownOrders[0].received_base_minor), 12345);
@@ -492,7 +508,7 @@ test("OWN scope isolates every order surface and tasks complete their full lifec
     await database.query("DELETE FROM projects WHERE id IN ($1,$2)", [ownProjectId, otherProjectId]).catch(() => undefined);
     if (userId) await database.query("DELETE FROM users WHERE id=$1", [userId]).catch(() => undefined);
     await database.query("DELETE FROM roles WHERE id=$1", [roleId]).catch(() => undefined);
-    await database.query("DELETE FROM audit_logs WHERE entity_id IN ($1,$2) OR actor_username_snapshot=$3", [ownOrderNo, otherOrderNo, userName]).catch(() => undefined);
+    await database.query("DELETE FROM audit_logs WHERE entity_id IN ($1,$2) OR actor_username_snapshot=$3 OR action=$4", [ownOrderNo, otherOrderNo, userName, `TEST_SCOPE_${suffix}`]).catch(() => undefined);
     await database.end();
   }
 });
