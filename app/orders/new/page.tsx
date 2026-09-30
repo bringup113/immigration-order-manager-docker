@@ -9,7 +9,6 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  CheckCircle2,
   LoaderCircle,
   Plus,
   Save,
@@ -19,17 +18,27 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { BlockingOperationOverlay } from "@/components/blocking-operation-overlay";
 import {
   CurrencySelect,
   type CurrencyOption,
 } from "@/components/currency-select";
 import { ErrorState, LoadingState } from "@/components/data-state";
+import {
+  ChoiceSelect as Choose,
+  FormField as Field,
+} from "@/components/form-layout";
+import {
+  FormHint as Hint,
+  MrzChecksumHint,
+  MrzReviewDetails,
+  NewOrderSection as Section,
+} from "@/components/new-order-ui";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -40,18 +49,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { apiPost } from "@/lib/use-api";
 import {
-  describeMrzChecksum,
   emptyPassportIdentity,
   recognizePassportFile,
   type PassportIdentity,
   type PassportMrzCapture,
+  type PassportScanProgress,
 } from "@/lib/passport-mrz";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 type Item = { id: string; name: string; [key: string]: unknown };
 type Applicant = PassportIdentity & {
@@ -60,7 +63,7 @@ type Applicant = PassportIdentity & {
   relationship: string;
   passportFile?: File;
   mrz?: PassportMrzCapture;
-  recognizing?: boolean;
+  passportProgress?: PassportScanProgress;
   notice?: string;
 };
 type Step = {
@@ -380,12 +383,14 @@ export default function NewOrderPage() {
     updateApplicant(index, {
       passportFile: file,
       mrz: undefined,
-      notice:
-        file.type === "application/pdf" ? "正在读取 PDF 页面并识别 MRZ…" : "",
-      recognizing: true,
+      notice: "",
+      passportProgress: { stage: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf_parsing" : "uploading" },
     });
     try {
-      const mrz = await recognizePassportFile(file);
+      const mrz = await recognizePassportFile(file, {
+        onProgress: (passportProgress) =>
+          updateApplicant(index, { passportProgress }),
+      });
       setApplicants((current) =>
         current.map((item, itemIndex) =>
           itemIndex === index
@@ -395,7 +400,7 @@ export default function NewOrderPage() {
                 name: item.name.trim() || mrz.fields.name,
                 passportFile: file,
                 mrz,
-                recognizing: false,
+                passportProgress: undefined,
                 notice: `${mrz.sourcePage ? `已从 PDF 第 ${mrz.sourcePage} 页识别。` : "MRZ 已识别。"}${mrz.formatWarning ? ` ${mrz.formatWarning}` : mrz.valid ? "全部校验位通过，请确认资料后保存。" : "有校验位未通过，请逐项人工核对。"}`,
               }
             : item,
@@ -403,7 +408,7 @@ export default function NewOrderPage() {
       );
     } catch (reason) {
       updateApplicant(index, {
-        recognizing: false,
+        passportProgress: undefined,
         notice:
           reason instanceof Error
             ? reason.message
@@ -423,7 +428,7 @@ export default function NewOrderPage() {
       applicants.every(
         (item) =>
           item.name.trim() &&
-          !item.recognizing,
+          !item.passportProgress,
       ) &&
       plans.length > 0 &&
       plans.every((item) => item.name.trim() && Number(item.amount) > 0),
@@ -690,17 +695,21 @@ export default function NewOrderPage() {
                   )}
                   <div className="ml-auto flex items-center gap-2">
                     <label
-                      className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border bg-white px-3 text-sm font-medium hover:bg-slate-50 ${row.recognizing ? "pointer-events-none opacity-60" : ""}`}
+                      className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border bg-white px-3 text-sm font-medium hover:bg-slate-50 ${row.passportProgress ? "pointer-events-none opacity-60" : ""}`}
                     >
-                      {row.recognizing ? (
+                      {row.passportProgress ? (
                         <LoaderCircle className="animate-spin" size={16} />
                       ) : row.mrz ? (
                         <ScanLine size={16} />
                       ) : (
                         <Upload size={16} />
                       )}{" "}
-                      {row.recognizing
-                        ? "正在识别…"
+                      {row.passportProgress
+                        ? row.passportProgress.stage === "pdf_parsing"
+                          ? "正在解析 PDF…"
+                          : row.passportProgress.stage === "uploading"
+                            ? "正在上传…"
+                            : "正在处理…"
                         : row.passportFile
                           ? "更换护照首页"
                           : "上传护照首页"}
@@ -1291,162 +1300,9 @@ export default function NewOrderPage() {
           </div>
         </Section>
       </div>
+      <BlockingOperationOverlay
+        progress={applicants.find((item) => item.passportProgress)?.passportProgress ?? null}
+      />
     </AppShell>
-  );
-}
-
-function Section({
-  title,
-  note,
-  action,
-  children,
-}: {
-  title: string;
-  note: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="panel p-5 sm:p-6">
-      <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <h2 className="font-semibold">{title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{note}</p>
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-function Hint({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-dashed bg-slate-50 p-5 text-sm text-slate-500">
-      {children}
-    </div>
-  );
-}
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
-function Choose({
-  value,
-  onChange,
-  placeholder,
-  items,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  items: string[][];
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="mt-2 w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {items.map(([id, label]) => (
-          <SelectItem key={id} value={id}>
-            {label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-function MrzChecksumHint({ capture }: { capture: PassportMrzCapture }) {
-  const entries = Object.entries(capture.checksums);
-  const validCount = entries.filter(([, valid]) => valid).length;
-  const formatText = capture.format
-    ? `（${capture.format}${capture.format === "TD3" ? " 护照" : ""}）`
-    : "";
-  return (
-    <TooltipProvider delayDuration={180}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            aria-label="查看 MRZ 校验位详情"
-            className="inline-flex shrink-0 cursor-help rounded-full outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            {capture.valid ? (
-              <CheckCircle2 size={15} />
-            ) : (
-              <AlertTriangle size={15} />
-            )}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" align="start" className="max-w-xs">
-          <div className="space-y-2">
-            <p className="font-medium">
-              MRZ 校验位{formatText}：{validCount}/{entries.length} 项通过
-            </p>
-            {capture.format === "TD3" && entries.length !== 5 && (
-              <p className="text-amber-700">
-                标准护照 TD3 应有 5 个校验位；当前识别结果可能不完整。
-              </p>
-            )}
-            {entries.length ? (
-              <div className="grid gap-1">
-                {entries.map(([key, valid]) => (
-                  <div
-                    key={key}
-                    className={valid ? "text-emerald-700" : "text-rose-700"}
-                  >
-                    {valid ? "✓" : "✕"} {describeMrzChecksum(key)}：
-                    {valid ? "通过" : "未通过"}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p>未返回可用的校验位明细。</p>
-            )}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-function MrzReviewDetails({ capture }: { capture: PassportMrzCapture }) {
-  const entries = Object.entries(capture.checksums);
-  return (
-    <details className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-      <summary className="cursor-pointer select-none font-medium text-slate-700">
-        查看原始 MRZ 与校验明细
-      </summary>
-      <div className="mt-3 space-y-3">
-        <p className="text-slate-500">
-          解析格式：{capture.format || "未知"}
-          {capture.format === "TD3" ? "（护照）" : ""}
-        </p>
-        <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100">
-          {capture.rawMrz}
-        </pre>
-        <div className="grid gap-1 sm:grid-cols-2">
-          {entries.map(([key, valid]) => (
-            <div
-              key={key}
-              className={valid ? "text-emerald-700" : "text-rose-700"}
-            >
-              {valid ? "✓" : "✕"} {describeMrzChecksum(key)}
-              {valid ? "通过" : "未通过"}
-            </div>
-          ))}
-        </div>
-      </div>
-    </details>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { Pencil, Plus, Power, Search } from "lucide-react";
-import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
@@ -19,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { apiPost, useApiList } from "@/lib/use-api";
+import { useReferenceEntityEditor } from "@/hooks/use-reference-entity-editor";
 import { usePermissions } from "@/lib/use-permissions";
 
 type Agent = {
@@ -44,98 +43,42 @@ const blank = {
 };
 
 export default function AgentsPage() {
-  const { rows, loading, error, reload } = useApiList<Agent>("agents");
   const canEdit = usePermissions()("agents.write");
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState("");
-  const [form, setForm] = useState(blank);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [query, setQuery] = useState("");
-  const [toggleTarget, setToggleTarget] = useState<Agent | null>(null);
-  const visible = useMemo(
-    () =>
-      rows.filter((row) =>
-        `${row.name} ${row.contact_name || ""} ${row.phone || ""} ${row.email || ""}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [rows, query],
-  );
-
-  function openCreate() {
-    setEditingId("");
-    setForm(blank);
-    setMessage("");
-    setOpen(true);
-  }
-  function openEdit(row: Agent) {
-    setEditingId(row.id);
-    setForm({
+  const {
+    rows,
+    loading,
+    error,
+    visible,
+    open,
+    setOpen,
+    editingId,
+    form,
+    setForm,
+    saving,
+    message,
+    query,
+    setQuery,
+    toggleTarget,
+    setToggleTarget,
+    openCreate,
+    openEdit,
+    save,
+    toggle,
+    confirmDeactivate,
+  } = useReferenceEntityEditor<Agent, typeof blank>({
+    resource: "agents",
+    blank,
+    toForm: (row) => ({
       name: row.name,
       contactName: row.contact_name || "",
       phone: row.phone || "",
       email: row.email || "",
       countryRegion: row.country_region || "",
       notes: row.notes || "",
-    });
-    setMessage("");
-    setOpen(true);
-  }
-  async function save() {
-    setSaving(true);
-    setMessage("");
-    try {
-      await apiPost("agents", {
-        ...form,
-        action: editingId ? "update" : "create",
-        id: editingId || undefined,
-      });
-      setOpen(false);
-      setForm(blank);
-      setEditingId("");
-      await reload();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }
-  async function toggle(row: Agent) {
-    const active = Boolean(row.active);
-    if (active) {
-      setMessage("");
-      setToggleTarget(row);
-      return;
-    }
-    try {
-      await apiPost("agents", {
-        action: "activate",
-        id: row.id,
-        name: row.name,
-      });
-      await reload();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "状态修改失败");
-    }
-  }
-  async function confirmDeactivate() {
-    if (!toggleTarget) return;
-    setSaving(true);
-    try {
-      await apiPost("agents", {
-        action: "deactivate",
-        id: toggleTarget.id,
-        name: toggleTarget.name,
-      });
-      setToggleTarget(null);
-      await reload();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "状态修改失败");
-    } finally {
-      setSaving(false);
-    }
-  }
+    }),
+    searchText: (row) =>
+      `${row.name} ${row.contact_name || ""} ${row.phone || ""} ${row.email || ""}`,
+  });
 
   return (
     <AppShell>

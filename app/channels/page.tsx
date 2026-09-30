@@ -1,7 +1,6 @@
 "use client";
 
 import { Building2, Pencil, Plus, Power, Search } from "lucide-react";
-import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
@@ -23,7 +22,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { apiPost, useApiList } from "@/lib/use-api";
+import { useReferenceEntityEditor } from "@/hooks/use-reference-entity-editor";
+import { useApiList } from "@/lib/use-api";
 import { usePermissions } from "@/lib/use-permissions";
 
 type Channel = {
@@ -50,35 +50,33 @@ const blank = {
 };
 
 export default function ChannelsPage() {
-  const { rows, loading, error, reload } = useApiList<Channel>("channels");
   const currencies = useApiList<CurrencyOption>("currencies");
   const canEdit = usePermissions()("channels.write");
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState("");
-  const [form, setForm] = useState(blank);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [query, setQuery] = useState("");
-  const [toggleTarget, setToggleTarget] = useState<Channel | null>(null);
-  const visible = useMemo(
-    () =>
-      rows.filter((row) =>
-        `${row.name} ${row.country || ""} ${row.contact_name || ""}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [rows, query],
-  );
-
-  function openCreate() {
-    setEditingId("");
-    setForm(blank);
-    setMessage("");
-    setOpen(true);
-  }
-  function openEdit(row: Channel) {
-    setEditingId(row.id);
-    setForm({
+  const {
+    rows,
+    loading,
+    error,
+    visible,
+    open,
+    setOpen,
+    editingId,
+    form,
+    setForm,
+    saving,
+    message,
+    query,
+    setQuery,
+    toggleTarget,
+    setToggleTarget,
+    openCreate,
+    openEdit,
+    save,
+    toggle,
+    confirmDeactivate,
+  } = useReferenceEntityEditor<Channel, typeof blank>({
+    resource: "channels",
+    blank,
+    toForm: (row) => ({
       name: row.name,
       country: row.country || "",
       contactName: row.contact_name || "",
@@ -86,64 +84,10 @@ export default function ChannelsPage() {
       email: row.email || "",
       settlementCurrency: row.settlement_currency,
       notes: row.notes || "",
-    });
-    setMessage("");
-    setOpen(true);
-  }
-  async function save() {
-    setSaving(true);
-    setMessage("");
-    try {
-      await apiPost("channels", {
-        ...form,
-        action: editingId ? "update" : "create",
-        id: editingId || undefined,
-      });
-      setOpen(false);
-      setEditingId("");
-      setForm(blank);
-      await reload();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }
-  async function toggle(row: Channel) {
-    const active = Boolean(row.active);
-    if (active) {
-      setMessage("");
-      setToggleTarget(row);
-      return;
-    }
-    try {
-      await apiPost("channels", {
-        action: "activate",
-        id: row.id,
-        name: row.name,
-      });
-      await reload();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "状态修改失败");
-    }
-  }
-  async function confirmDeactivate() {
-    if (!toggleTarget) return;
-    setSaving(true);
-    try {
-      await apiPost("channels", {
-        action: "deactivate",
-        id: toggleTarget.id,
-        name: toggleTarget.name,
-      });
-      setToggleTarget(null);
-      await reload();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "状态修改失败");
-    } finally {
-      setSaving(false);
-    }
-  }
+    }),
+    searchText: (row) =>
+      `${row.name} ${row.country || ""} ${row.contact_name || ""}`,
+  });
 
   return (
     <AppShell>

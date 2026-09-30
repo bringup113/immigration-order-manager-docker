@@ -72,7 +72,7 @@ docker compose -f docker-compose.yml -f docker-compose.low-resource.yml up -d
 # NAS 部署叠加 docker-compose.nas.yml；Caddy 公网部署叠加 docker-compose.public.yml。
 ```
 
-MRZ 单 worker 顺序处理，默认最多 3 个等待任务，单文件 20 MiB，等待文件合计 100 MiB，请求等待 60 秒；中心裁切与后处理关闭。图片由 sidecar 识别；PDF 在浏览器中逐页临时渲染。服务故障只影响识别功能，人工录入仍可进行。参数与验证边界见 [MRZ 服务说明](MRZ_SIDECAR_POC_2026-09-14.md)。
+MRZ 单 worker 顺序处理，默认最多 3 个等待任务，单文件 20 MiB，等待文件合计 100 MiB，请求等待 60 秒；中心裁切与后处理关闭。图片由 sidecar 识别；PDF 在浏览器中逐页临时渲染。服务故障只影响识别功能，人工录入仍可进行。参数与验证边界见 [MRZ 服务说明](MRZ_SERVICE.md)。
 
 ## 发布前验证
 
@@ -94,4 +94,4 @@ npm run test:browser:mobile:real
 npm run deployment:verify
 ```
 
-浏览器与集成测试会创建或修改测试夹具，必须按 [当前验证记录](CODE_QUALITY.md) 所述在隔离环境执行。历史压测见 [2026-09-11 性能报告](PERFORMANCE_REPORT_2026-09-11.md)，只能作为当时配置的参考。
+浏览器与集成测试会创建或修改测试夹具，必须按 [当前验证记录](CODE_QUALITY.md) 所述在隔离环境执行。性能判断必须在隔离环境或目标设备上使用当前源码重新测试，不能沿用旧环境数字。

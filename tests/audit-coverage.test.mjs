@@ -51,6 +51,17 @@ test("read-only file access uses monitored best-effort audit", () => {
   assert.match(source, /MATERIAL_FILE_DOWNLOAD/);
 });
 
+test("new material file audit names are redacted before storage without read-time rewriting", () => {
+  const audit = readFileSync("lib/audit.ts", "utf8");
+  const route = readFileSync("app/api/admin/audit/route.ts", "utf8");
+  assert.match(audit, /const entityLabel = materialFile \? "\[文件名称已隐藏\]"/);
+  assert.match(audit, /materialFileSummary/);
+  for (const field of ["originalname", "storedname", "relativepath", "sha256"])
+    assert.match(audit, new RegExp(field));
+  assert.doesNotMatch(route, /redactAuditRow/);
+  assert.match(route, /rows: rows\.results/);
+});
+
 test("file lifecycle and integrity checks are audited", () => {
   const upload = readFileSync("app/api/material-files/route.ts", "utf8");
   const lifecycle = readFileSync(
@@ -242,6 +253,7 @@ test("passport MRZ is permissioned, audited, self-hosted, and tied to a fixed ap
     "utf8",
   );
   const newOrder = readFileSync("app/orders/new/page.tsx", "utf8");
+  const newOrderUi = readFileSync("components/new-order-ui.tsx", "utf8");
   const details = [
     readFileSync("components/order-detail.tsx", "utf8"),
     readFileSync("components/order-detail-people-section.tsx", "utf8"),
@@ -256,6 +268,9 @@ test("passport MRZ is permissioned, audited, self-hosted, and tied to a fixed ap
   );
   assert.match(mrzScanRoute, /APPLICANT_MRZ_SCAN/);
   assert.match(mrzScanRoute, /include_raw=1/);
+  assert.match(mrzScanRoute, /orderScopeFilter\(auth\.user, "o"\)/);
+  assert.match(mrzScanRoute, /system_code !== "PASSPORT_BIO_PAGE"/);
+  assert.match(mrzScanRoute, /event: "mrz_scan_timing"/);
   assert.match(orderRoute, /rawMrz:\s*"\[已隐藏\]"/);
   assert.match(orderRoute, /system_code='PASSPORT_BIO_PAGE'/);
   assert.match(uploadRoute, /mrz_status='NOT_SCANNED'/);
@@ -265,8 +280,14 @@ test("passport MRZ is permissioned, audited, self-hosted, and tied to a fixed ap
   assert.match(newOrder, /accept="\.pdf,\.jpg,\.jpeg,\.png,\.webp"/);
   assert.match(newOrder, /newApplicant\("DEPENDENT"\)/);
   assert.match(newOrder, /新增附属申请人/);
-  assert.match(newOrder, /TooltipContent/);
+  assert.match(newOrder, /MrzChecksumHint/);
+  assert.match(newOrderUi, /TooltipContent/);
   assert.match(details, /识别当前护照/);
+  const passportWorkflow = readFileSync(
+    "hooks/use-passport-mrz-workflow.ts",
+    "utf8",
+  );
+  assert.match(passportWorkflow, /storedMaterialFileId: materialFileId/);
   assert.match(dockerfile, /copy-pdf-assets/);
   assert.match(readFileSync("lib/passport-mrz.ts", "utf8"), /pdfjs-dist/);
   assert.match(readFileSync("lib/passport-mrz.ts", "utf8"), /findMrzLines/);

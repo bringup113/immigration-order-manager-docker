@@ -11,26 +11,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fetchApiJson } from "@/lib/api-client";
+import {
+  type AccountSession,
+  beginAccountMfa,
+  changeAccountPassword,
+  enableAccountMfa,
+  loadAccountSecurity,
+  loadAccountSessions,
+  manageAccountMfa,
+  recoveryCodesFrom,
+  revokeAccountSessions,
+} from "@/lib/account-security-client";
 import { safeReturnPath } from "@/lib/safe-return-path";
-
-async function postMfa(body: unknown) {
-  return fetchApiJson<Record<string, unknown>>("/api/auth/mfa", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-type SessionRow = {
-  id: string;
-  created_at: string;
-  last_seen_at: string;
-  expires_at: string;
-  ip: string | null;
-  user_agent: string | null;
-  is_current: number;
-};
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -49,33 +41,23 @@ export default function ProfilePage() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [mfaMessage, setMfaMessage] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessions, setSessions] = useState<AccountSession[]>([]);
   const [sessionMessage, setSessionMessage] = useState("");
   const returnTo = useRef("/");
 
   async function loadSessions() {
-    const response = await fetch("/api/auth/sessions", { cache: "no-store" });
-    if (response.ok) setSessions((await response.json()).sessions || []);
+    setSessions(await loadAccountSessions());
   }
 
   useEffect(() => {
     returnTo.current = safeReturnPath(
       new URLSearchParams(window.location.search).get("return_to"),
     );
-    Promise.all([
-      fetch("/api/auth/mfa", { cache: "no-store" }).then(async (response) =>
-        response.ok ? response.json() : null,
-      ),
-      fetch("/api/auth/sessions", { cache: "no-store" }).then(
-        async (response) => (response.ok ? response.json() : null),
-      ),
-    ])
-      .then(([mfa, activeSessions]) => {
-        if (mfa) {
-          setMfaEnabled(Boolean(mfa.enabled));
-          setMfaRequired(Boolean(mfa.required));
-        }
-        if (activeSessions) setSessions(activeSessions.sessions || []);
+    loadAccountSecurity()
+      .then(({ mfa, sessions: activeSessions }) => {
+        setMfaEnabled(mfa.enabled);
+        setMfaRequired(mfa.required);
+        setSessions(activeSessions);
       })
       .catch(() => undefined);
   }, []);
@@ -90,13 +72,7 @@ export default function ProfilePage() {
     }
     setSaving(true);
     try {
-      const response = await fetch("/api/auth/password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ currentPassword: current, newPassword: next }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "修改失败");
+      await changeAccountPassword(current, next);
       router.replace(
         `/api/auth/login?return_to=${encodeURIComponent(returnTo.current)}`,
       );
@@ -112,12 +88,11 @@ export default function ProfilePage() {
     setMfaMessage("");
     setRecoveryCodes([]);
     try {
-      const data = await postMfa({
-        action: "begin",
-        ...(mfaEnabled
+      const data = await beginAccountMfa(
+        mfaEnabled
           ? { password: mfaPassword, currentCode: mfaCode }
-          : {}),
-      });
+          : undefined,
+      );
       setMfaSecret(String(data.secret || ""));
       setMfaReauthToken(String(data.reauthToken || ""));
       setMfaPassword("");
@@ -137,22 +112,14 @@ export default function ProfilePage() {
   async function enableMfa() {
     setMfaMessage("");
     try {
-      const data = await postMfa({
-        action: "enable",
-        code: mfaCode,
-        reauthToken: mfaReauthToken,
-      });
+      const data = await enableAccountMfa(mfaCode, mfaReauthToken);
       setMfaEnabled(true);
       setMfaRequired(false);
       setMfaSecret("");
       setMfaQrCode("");
       setMfaCode("");
       setMfaReauthToken("");
-      setRecoveryCodes(
-        Array.isArray(data.recoveryCodes)
-          ? data.recoveryCodes.map(String)
-          : [],
-      );
+      setRecoveryCodes(recoveryCodesFrom(data));
       setMfaMessage(
         "双重验证已启用。恢复码只显示这一次，请保存在电脑端安全位置。",
       );
@@ -163,11 +130,7 @@ export default function ProfilePage() {
   async function disableMfa() {
     setMfaMessage("");
     try {
-      await postMfa({
-        action: "disable",
-        password: mfaPassword,
-        code: mfaCode,
-      });
+      await manageAccountMfa("disable", mfaPassword, mfaCode);
       setMfaEnabled(false);
       setMfaPassword("");
       setMfaCode("");
@@ -180,16 +143,12 @@ export default function ProfilePage() {
   async function regenerateRecoveryCodes() {
     setMfaMessage("");
     try {
-      const data = await postMfa({
-        action: "recoveryCodes",
-        password: mfaPassword,
-        code: mfaCode,
-      });
-      setRecoveryCodes(
-        Array.isArray(data.recoveryCodes)
-          ? data.recoveryCodes.map(String)
-          : [],
+      const data = await manageAccountMfa(
+        "recoveryCodes",
+        mfaPassword,
+        mfaCode,
       );
+      setRecoveryCodes(recoveryCodesFrom(data));
       setMfaPassword("");
       setMfaCode("");
       setMfaMessage("恢复码已更新，旧恢复码全部失效。");
@@ -203,22 +162,17 @@ export default function ProfilePage() {
     sessionId?: string,
   ) {
     setSessionMessage("");
-    const response = await fetch("/api/auth/sessions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, sessionId }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setSessionMessage(data.error || "注销设备失败。");
-      return;
+    try {
+      const data = await revokeAccountSessions(action, sessionId);
+      setSessionMessage(
+        data.count
+          ? `已注销 ${data.count} 个其他会话。`
+          : "没有需要注销的其他会话。",
+      );
+      await loadSessions();
+    } catch (reason) {
+      setSessionMessage(reason instanceof Error ? reason.message : "注销设备失败。");
     }
-    setSessionMessage(
-      data.count
-        ? `已注销 ${data.count} 个其他会话。`
-        : "没有需要注销的其他会话。",
-    );
-    await loadSessions();
   }
 
   return (

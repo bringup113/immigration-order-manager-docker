@@ -150,9 +150,14 @@ if (screenshotDir) mkdirSync(screenshotDir, { recursive: true });
 
     await page.goto(`${base}/m/orders/${orderNo}?tab=workflow`);
     await page.getByRole("button", { name: "完成步骤" }).click();
-    await page.getByRole("dialog", { name: "完成当前步骤" }).getByRole("button", { name: "确认完成" }).click();
-    await page.getByText("CI 后续流程").waitFor();
-    await page.getByText("进行中", { exact: true }).waitFor();
+    const completeDialog = page.getByRole("dialog", { name: "完成当前步骤" });
+    await completeDialog.getByRole("button", { name: "确认完成" }).click();
+    await completeDialog.waitFor({ state: "hidden" });
+    const currentStepCard = page
+      .getByText("当前步骤", { exact: true })
+      .locator("..");
+    await currentStepCard.getByText("CI 后续流程", { exact: true }).waitFor();
+    await currentStepCard.getByText(/^进行中/).waitFor();
     await page.getByRole("button", { name: "新增跟进" }).click();
     await page.getByRole("textbox", { name: "本次跟进内容" }).fill("CI 手机端跟进");
     await page.getByRole("textbox", { name: "详细说明（可选）" }).fill("已通过手机端登记");

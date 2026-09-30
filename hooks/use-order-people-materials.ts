@@ -3,15 +3,15 @@ import type { Row } from "@/components/order-detail-ui";
 import type {
   ApplicantDraft,
   MaterialDraft,
-  MrzReview,
   OrderDetailConfirmation,
   OrderDetailData,
   OrderDetailDialog,
 } from "@/components/order-detail-types";
 import {
-  emptyPassportIdentity,
-  recognizePassportFile,
-} from "@/lib/passport-mrz";
+  passportUploadStages,
+  usePassportMrzWorkflow,
+} from "@/hooks/use-passport-mrz-workflow";
+import { emptyPassportIdentity } from "@/lib/passport-mrz";
 
 type UseOrderPeopleMaterialsOptions = {
   orderNo: string;
@@ -51,51 +51,39 @@ export function useOrderPeopleMaterials({
     ...emptyPassportIdentity(),
     relationship: "",
   });
-  const [mrzReview, setMrzReview] = useState<MrzReview | null>(null);
-  const [scanningPassport, setScanningPassport] = useState(false);
-
   const can = (permission: string) =>
     permissions.includes("*") || permissions.includes(permission);
   const selectedApplicant =
     data?.applicants.find((item) => item.id === selectedApplicantId) ||
     data?.applicants[0] ||
     null;
-
-  async function prepareMrzReview(
-    applicantId: string,
-    materialFileId: string,
-    file: File,
-  ) {
-    setScanningPassport(true);
-    setMessage("");
-    try {
-      const capture = await recognizePassportFile(file);
-      const current = data?.applicants.find(
-        (item) => String(item.id) === applicantId,
-      );
-      const fields = {
-        ...capture.fields,
-        name: String(current?.name || "").trim() || capture.fields.name,
-      };
-      setMrzReview({ applicantId, materialFileId, capture, fields });
-      setDialog("mrz");
-    } catch (reason) {
-      setFileNotice({
-        text:
-          reason instanceof Error
-            ? reason.message
-            : "MRZ 识别失败，请人工核对申请人资料。",
-        error: true,
-      });
-    } finally {
-      setScanningPassport(false);
-      setUploadingMaterialId("");
-    }
-  }
+  const passportWorkflow = usePassportMrzWorkflow({
+    orderNo,
+    data,
+    selectedApplicant,
+    load,
+    setDialog,
+    setMessage,
+    setFileNotice,
+    setUploadingMaterialId,
+  });
 
   async function uploadMaterialFile(materialId: string, file?: File) {
     if (!file) return;
+    const targetMaterial = data?.materials.find(
+      (item) => String(item.id) === materialId,
+    );
+    const shouldScanPassport = Boolean(
+      targetMaterial?.system_code === "PASSPORT_BIO_PAGE" &&
+      targetMaterial.applicant_id &&
+      (file.type.startsWith("image/") || file.type === "application/pdf") &&
+      can("applicants.mrz"),
+    );
+    const visibleStages = shouldScanPassport ? passportUploadStages(file) : undefined;
     setUploadingMaterialId(materialId);
+    if (shouldScanPassport) {
+      passportWorkflow.beginPassportScan(file);
+    }
     setFileNotice({ text: "", error: false });
     try {
       const form = new FormData();
@@ -113,22 +101,18 @@ export function useOrderPeopleMaterials({
         error: false,
       });
       await load();
-      const targetMaterial = data?.materials.find(
-        (item) => String(item.id) === materialId,
-      );
-      if (
-        targetMaterial?.system_code === "PASSPORT_BIO_PAGE" &&
-        targetMaterial.applicant_id &&
-        (file.type.startsWith("image/") || file.type === "application/pdf") &&
-        can("applicants.mrz")
-      ) {
-        await prepareMrzReview(
+      if (shouldScanPassport && targetMaterial?.applicant_id) {
+        const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+        await passportWorkflow.prepareMrzReview(
           String(targetMaterial.applicant_id),
           String(result.id),
           file,
+          isPdf,
+          visibleStages,
         );
       }
     } catch (reason) {
+      passportWorkflow.cancelPassportScan();
       setFileNotice({
         text: reason instanceof Error ? reason.message : "上传失败",
         error: true,
@@ -151,8 +135,21 @@ export function useOrderPeopleMaterials({
       onConfirm: async (reason) => {
         setUploadingMaterialId(fileId);
         setFileNotice({ text: "", error: false });
+        const target = data?.materialFiles.find((item) => item.id === fileId);
+        const materialRow = data?.materials.find(
+          (item) => item.id === target?.material_id,
+        );
+        const shouldScanPassport = Boolean(
+          materialRow?.system_code === "PASSPORT_BIO_PAGE" &&
+          materialRow.applicant_id &&
+          (file.type.startsWith("image/") || file.type === "application/pdf") &&
+          can("applicants.mrz"),
+        );
+        const visibleStages = shouldScanPassport ? passportUploadStages(file) : undefined;
+        if (shouldScanPassport) {
+          passportWorkflow.beginPassportScan(file);
+        }
         try {
-          const target = data?.materialFiles.find((item) => item.id === fileId);
           const form = new FormData();
           form.set("orderNo", orderNo);
           form.set("materialId", String(target?.material_id || ""));
@@ -170,22 +167,19 @@ export function useOrderPeopleMaterials({
             error: false,
           });
           await load();
-          const materialRow = data?.materials.find(
-            (item) => item.id === target?.material_id,
-          );
-          if (
-            materialRow?.system_code === "PASSPORT_BIO_PAGE" &&
-            materialRow.applicant_id &&
-            (file.type.startsWith("image/") ||
-              file.type === "application/pdf") &&
-            can("applicants.mrz")
-          ) {
-            await prepareMrzReview(
+          if (shouldScanPassport && materialRow?.applicant_id) {
+            const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+            await passportWorkflow.prepareMrzReview(
               String(materialRow.applicant_id),
               String(result.id),
               file,
+              isPdf,
+              visibleStages,
             );
           }
+        } catch (error) {
+          passportWorkflow.cancelPassportScan();
+          throw error;
         } finally {
           setUploadingMaterialId("");
         }
@@ -321,80 +315,6 @@ export function useOrderPeopleMaterials({
     setDialog("applicant");
   }
 
-  async function scanCurrentPassport() {
-    if (!selectedApplicant) return;
-    const materialRow = data?.materials.find(
-      (item) =>
-        item.applicant_id === selectedApplicant.id &&
-        item.system_code === "PASSPORT_BIO_PAGE",
-    );
-    const file = data?.materialFiles.find(
-      (item) =>
-        item.material_id === materialRow?.id &&
-        (!item.status || item.status === "ACTIVE"),
-    );
-    if (!file) {
-      setFileNotice({ text: "请先上传该申请人的护照首页。", error: true });
-      return;
-    }
-    try {
-      setScanningPassport(true);
-      const response = await fetch(
-        `/api/material-files/${encodeURIComponent(String(file.id))}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) throw new Error("读取护照首页失败。");
-      const blob = await response.blob();
-      await prepareMrzReview(
-        String(selectedApplicant.id),
-        String(file.id),
-        new File([blob], String(file.stored_name), {
-          type: String(file.mime_type),
-        }),
-      );
-    } catch (reason) {
-      setFileNotice({
-        text: reason instanceof Error ? reason.message : "读取护照首页失败。",
-        error: true,
-      });
-      setScanningPassport(false);
-    }
-  }
-
-  async function confirmMrzReview() {
-    if (!mrzReview) return;
-    setMessage("");
-    try {
-      const response = await fetch(
-        `/api/orders/${encodeURIComponent(orderNo)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            action: "confirmMrz",
-            applicantId: mrzReview.applicantId,
-            materialFileId: mrzReview.materialFileId,
-            rawMrz: mrzReview.capture.rawMrz,
-            fields: mrzReview.fields,
-          }),
-        },
-      );
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "MRZ 确认失败");
-      setDialog(null);
-      setMrzReview(null);
-      setFileNotice({
-        text: result.valid
-          ? "MRZ 已确认，全部校验位通过。"
-          : "MRZ 已人工确认；存在未通过的校验位，请以已核对资料为准。",
-        error: false,
-      });
-      await load();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "MRZ 确认失败");
-    }
-  }
-
   async function saveApplicant() {
     try {
       await act({
@@ -435,9 +355,10 @@ export function useOrderPeopleMaterials({
     setMaterial,
     applicant,
     setApplicant,
-    mrzReview,
-    setMrzReview,
-    scanningPassport,
+    mrzReview: passportWorkflow.mrzReview,
+    setMrzReview: passportWorkflow.setMrzReview,
+    scanningPassport: passportWorkflow.scanningPassport,
+    passportProgress: passportWorkflow.passportProgress,
     uploadMaterialFile,
     replaceMaterialFile,
     changeMaterialFileStatus,
@@ -446,8 +367,8 @@ export function useOrderPeopleMaterials({
     removeMaterial,
     saveMaterial,
     openApplicant,
-    scanCurrentPassport,
-    confirmMrzReview,
+    scanCurrentPassport: passportWorkflow.scanCurrentPassport,
+    confirmMrzReview: passportWorkflow.confirmMrzReview,
     saveApplicant,
     removeApplicant,
   };

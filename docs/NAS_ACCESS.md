@@ -2,9 +2,9 @@
 
 本项目支持同一套 NAS 容器同时从内网 IP 和 Lucky 公网域名访问。下面的 IP、域名和端口是当前环境的示例，迁移到另一台 NAS 时应替换成新环境的实际值：
 
-- 内网：`http://192.168.3.13:3000`
+- 内网：`http://192.168.124.88:3000`
 - 公网：`https://order.tcvisa.vip:8888`
-- Lucky 后端：`http://192.168.3.13:3000`
+- Lucky 后端：`http://192.168.124.88:3000`
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
 在项目根目录的 `.env` 中保留数据库账号、随机密码、UID/GID 等现有内容，并确认以下项目：
 
 ```dotenv
-NAS_BIND_ADDRESS=192.168.3.13
+NAS_BIND_ADDRESS=192.168.124.88
 APP_PORT=3000
 APP_ORIGIN=https://order.tcvisa.vip:8888
 PUBLIC_DEPLOYMENT=1
@@ -48,7 +48,7 @@ https://order.tcvisa.vip:8888
 ```text
 order.tcvisa.vip:8888                 # 缺少 https://
 https://order.tcvisa.vip:8888/login   # 包含路径
-http://192.168.3.13:3000              # 这是内网入口，不是正式公网来源
+http://192.168.124.88:3000            # 这是内网入口，不是正式公网来源
 http://0.0.0.0:3000                   # 0.0.0.0 不是浏览器访问地址
 ```
 
@@ -63,7 +63,7 @@ http://0.0.0.0:3000                   # 0.0.0.0 不是浏览器访问地址
 3. Origin 的主机和端口与本次请求的 Host 一致时，接受内网同源请求。
 4. 其余来源拒绝，并记录安全审计日志。
 
-因此内网用户直接打开 `http://192.168.3.13:3000` 即可登录和使用全部已授权功能，不需要把内网地址并入 `APP_ORIGIN`。公网和内网会分别保存 Cookie，第一次从另一个入口进入时需要重新登录。
+因此内网用户直接打开 `http://192.168.124.88:3000` 即可登录和使用全部已授权功能，不需要把内网地址并入 `APP_ORIGIN`。公网和内网会分别保存 Cookie，第一次从另一个入口进入时需要重新登录。
 
 ## Lucky 怎么填写
 
@@ -72,7 +72,7 @@ Web 服务保持以下关系：
 | 项目 | 值 |
 | --- | --- |
 | 前端地址 | `https://order.tcvisa.vip:8888` |
-| 后端地址 | `http://192.168.3.13:3000` |
+| 后端地址 | `http://192.168.124.88:3000` |
 | HTTP 跳转 | 跳转到同一域名的 HTTPS 8888 |
 | 原始 Host | 传递给后端 |
 | `X-Forwarded-Host` | 传递外部请求的原始主机名与端口 |
@@ -106,7 +106,7 @@ docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --force-rec
 内网页面：
 
 ```bash
-curl -I http://192.168.3.13:3000/
+curl -I http://192.168.124.88:3000/
 ```
 
 公网登录页：

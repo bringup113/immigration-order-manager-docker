@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/components/current-user-provider";
 import type { CurrencyOption } from "@/components/currency-select";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { BlockingOperationOverlay } from "@/components/blocking-operation-overlay";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { ImagePreview } from "@/components/image-preview";
 import { OrderDetailFinanceSection } from "@/components/order-detail-finance-section";
@@ -234,6 +235,7 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
     mrzReview,
     setMrzReview,
     scanningPassport,
+    passportProgress,
     uploadMaterialFile,
     replaceMaterialFile,
     changeMaterialFileStatus,
@@ -871,6 +873,9 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
           setEditingTaskId("");
         }}
         onSaveTask={saveTask}
+      />
+      <BlockingOperationOverlay
+        progress={passportProgress ?? (uploadingMaterialId ? { stage: "archiving", uploadOnly: true } : null)}
       />
     </>
   );

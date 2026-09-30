@@ -3,12 +3,13 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { Camera, Eye, FileUp, Images, ScanLine } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { BlockingOperationOverlay } from "@/components/blocking-operation-overlay";
 import { ImagePreview } from "@/components/image-preview";
 import type { Row } from "@/components/order-detail-ui";
 import { MobileMessage } from "@/components/mobile/mobile-states";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ApiRequestError, fetchApiJson } from "@/lib/api-client";
-import { describeMrzChecksum, type PassportIdentity, type PassportMrzCapture } from "@/lib/passport-mrz";
+import { describeMrzChecksum, type PassportIdentity, type PassportMrzCapture, type PassportScanProgress } from "@/lib/passport-mrz";
 import { useMobileOrderMutation } from "@/hooks/use-mobile-order-mutation";
 
 const imageTypes = "image/jpeg,image/png,image/webp";
@@ -58,7 +59,8 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
   const [reviewChecked, setReviewChecked] = useState(false);
   const [discardReview, setDiscardReview] = useState(false);
   const [uploading, setUploading] = useState("");
-  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<PassportScanProgress | null>(null);
+  const scanning = Boolean(scanProgress);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [uploadUncertain, setUploadUncertain] = useState(false);
@@ -78,13 +80,16 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
     ? sections
     : sections.filter((section) => section.id === activeApplicantId);
 
-  async function scanPassport(file: File, applicantId: string, materialFileId: string, storedName: string, mimeType: string) {
-    setScanning(true);
+  async function scanPassport(file: File, applicantId: string, materialFileId: string, storedName: string, mimeType: string, includeUpload = true) {
+    setScanProgress({ stage: file.type === "application/pdf" ? "pdf_parsing" : "validating", includeUpload });
     setError("");
     try {
       // PDF parsing and the MRZ parser are loaded only when the user scans a passport.
       const { recognizePassportFile } = await import("@/lib/passport-mrz");
-      const capture = await recognizePassportFile(file);
+      const capture = await recognizePassportFile(file, {
+        storedMaterialFileId: materialFileId,
+        onProgress: (progress) => setScanProgress({ ...progress, includeUpload }),
+      });
       const current = applicants.find((item) => text(item, "id") === applicantId);
       const fields = { ...capture.fields, name: text(current ?? {}, "name").trim() || capture.fields.name };
       setReview({ applicantId, materialFileId, storedName, mimeType, capture,
@@ -92,7 +97,7 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
       setReviewChecked(false);
     } catch (reason) {
       setError(`${reason instanceof Error ? reason.message : "MRZ 识别失败。"} 文件已保留，可人工填写申请人资料。`);
-    } finally { setScanning(false); }
+    } finally { setScanProgress(null); }
   }
 
   async function upload(material: Row, file?: File) {
@@ -112,8 +117,10 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
       const saved = await fetchApiJson<{ id: string; storedName: string }>("/api/material-files", { method: "POST", body: form });
       setNotice("文件已上传并归档。护照识别结果仍需人工确认。");
       onReload();
-      if (material.system_code === "PASSPORT_BIO_PAGE" && material.applicant_id && canMrz)
+      if (material.system_code === "PASSPORT_BIO_PAGE" && material.applicant_id && canMrz) {
+        setUploading("");
         await scanPassport(file, text(material, "applicant_id"), saved.id, saved.storedName, file.type);
+      }
     } catch (reason) {
       if (!(reason instanceof ApiRequestError)) {
         setUploadUncertain(true);
@@ -125,17 +132,21 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
 
   async function scanExisting(material: Row, file: Row) {
     if (!canMrz || readPending || scanning) return;
-    setScanning(true);
+    setScanProgress({ stage: text(file, "mime_type") === "application/pdf" ? "pdf_parsing" : "validating" });
     setError("");
     try {
-      const response = await fetch(`/api/material-files/${encodeURIComponent(text(file, "id"))}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("读取护照首页失败。");
-      const blob = await response.blob();
-      const image = new File([blob], text(file, "stored_name"), { type: text(file, "mime_type") });
-      await scanPassport(image, text(material, "applicant_id"), text(file, "id"), text(file, "stored_name"), text(file, "mime_type"));
+      const mimeType = text(file, "mime_type");
+      let blob: Blob = new Blob([], { type: mimeType });
+      if (mimeType === "application/pdf") {
+        const response = await fetch(`/api/material-files/${encodeURIComponent(text(file, "id"))}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("读取护照首页失败。");
+        blob = await response.blob();
+      }
+      const image = new File([blob], text(file, "stored_name"), { type: mimeType });
+      await scanPassport(image, text(material, "applicant_id"), text(file, "id"), text(file, "stored_name"), text(file, "mime_type"), mimeType === "application/pdf");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "读取护照首页失败。");
-    } finally { setScanning(false); }
+    } finally { setScanProgress(null); }
   }
 
   function updateField(key: keyof PassportIdentity, value: string) {
@@ -213,7 +224,7 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
         {section.materials.map((material) => {
           const materialId = text(material, "id");
           const currentFiles = activeFiles(files, materialId);
-          const disabled = Boolean(uploading) || readPending || uploadUncertain;
+          const disabled = Boolean(uploading) || scanning || readPending || uploadUncertain;
           return <div key={materialId} className="border-t border-slate-100 px-4 py-3 first:border-0">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -232,7 +243,7 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
                 <FileUp size={15} />上传
               </button>}
             </div>
-            {uploading === materialId && <p role="status" className="mt-2 text-xs text-teal-700">上传中…</p>}
+            {uploading === materialId && <p role="status" className="mt-2 text-xs text-teal-700">正在上传…</p>}
             {currentFiles.map((file) => <div key={text(file, "id")}
               className="mt-2 flex items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs">
               <span className="min-w-0 flex-1 truncate text-slate-600">{text(file, "stored_name")}</span>
@@ -250,7 +261,7 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
         })}
       </div> : <p className="px-4 py-5 text-sm text-slate-500">暂无所需材料。材料要求请在电脑端维护。</p>}
     </section>)}
-    {scanning && <MobileMessage>正在识别护照 MRZ，请稍候…</MobileMessage>}
+    {scanning && <MobileMessage>正在识别…</MobileMessage>}
     <Dialog open={Boolean(uploadTarget)} onOpenChange={(open) => { if (!open && !uploading) setUploadTarget(null); }}>
       <DialogContent className="!bottom-0 !top-auto !w-full !max-w-[520px] !translate-y-0 rounded-b-none rounded-t-3xl p-5">
         <DialogHeader>
@@ -369,5 +380,8 @@ export function MobileMaterials({ orderNo, version, applicants, materials, files
       title="放弃护照核对结果？" description="当前修改或核对状态尚未登记，关闭后需要重新识别和核对。"
       confirmLabel="放弃并关闭" destructive pending={false}
       onConfirm={() => { setDiscardReview(false); setReview(null); setReviewChecked(false); }} />
+    <BlockingOperationOverlay
+      progress={scanProgress ?? (uploading ? { stage: "uploading", uploadOnly: true } : null)}
+    />
   </div>;
 }

@@ -2,7 +2,7 @@
 
 MIGRA 帮助小团队从签约到结案管理移民订单：项目模板、申请人、办理流程、材料、订单收付款、提醒和查询都围绕同一张订单展开。电脑端用于完整办公；手机端是可添加到桌面的移动工作台，方便外出时查看进度和处理简短事项。
 
-> 当前主线：`main`，发布版本为 `v1.0.3`。最近一次源码提交见 [GitHub 提交记录](https://github.com/bringup113/immigration-order-manager-docker/commits/main)。部署前请以实际检出的提交、[当前状态](docs/IMPLEMENTATION_PLAN.md)和 CI 结果为准。
+> 发布版本为 `v1.0.3`。当前清理工作在独立分支验收，尚未推送；部署前请以实际检出的提交、[当前验证记录](docs/CODE_QUALITY.md)和 CI 结果为准。
 
 ## 先看系统怎么工作
 
@@ -84,7 +84,7 @@ flowchart LR
 在 `.env` 中按实际环境填写，例如：
 
 ```dotenv
-NAS_BIND_ADDRESS=192.168.3.13
+NAS_BIND_ADDRESS=192.168.124.88
 APP_PORT=3000
 APP_ORIGIN=https://你的正式域名:8888
 PUBLIC_DEPLOYMENT=1
@@ -124,16 +124,16 @@ docker compose -f docker-compose.yml -f docker-compose.low-resource.yml up -d
 npm test
 ```
 
-隔离集成、浏览器、备份恢复、MRZ 与 NAS 验收的具体条件见[当前验证记录](docs/CODE_QUALITY.md)和[部署与运维说明](docs/OPERATIONS.md)。历史压测是特定旧环境结果，不能直接当成当前 NAS 的容量承诺。
+隔离集成、浏览器、备份恢复、MRZ 与 NAS 验收的具体条件见[当前验证记录](docs/CODE_QUALITY.md)和[部署与运维说明](docs/OPERATIONS.md)。任何容量判断都应在目标 NAS 和真实数据规模下重新测量。
 
 ## 文档入口
 
 | 文档 | 适合什么时候看 |
 | --- | --- |
-| [当前状态与下一步](docs/IMPLEMENTATION_PLAN.md) | 确认已完成事项和仍待真机验收的工作 |
 | [移动工作台说明](docs/MOBILE_PWA_DEVELOPMENT_PLAN.md) | 手机页面、操作范围、PWA 与真机验收 |
 | [NAS 与 Lucky 部署说明](docs/NAS_ACCESS.md) | 配置内外网、域名、代理与双重验证 |
 | [部署与运维说明](docs/OPERATIONS.md) | 备份恢复、资源配置、运维命令与测试 |
 | [开发约束](docs/DEVELOPMENT.md) | 修改业务代码时的权限、事务、审计和 CI 规则 |
 | [当前验证记录](docs/CODE_QUALITY.md) | 当前源码的测试证据与已知边界 |
-| [MRZ 服务说明](docs/MRZ_SIDECAR_POC_2026-09-14.md) | 识别参数、运行检查和性能边界 |
+| [MRZ 服务说明](docs/MRZ_SERVICE.md) | 识别参数、运行检查和性能边界 |
+| [源码清理计划](docs/CODEBASE_CLEANUP_PLAN.md) | 查看本轮执行顺序和当前进度 |
