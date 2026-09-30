@@ -2,17 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Library,
-  Pencil,
-  Plus,
-  Save,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, Library, Save, Search } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
@@ -22,8 +12,16 @@ import {
   type CurrencyOption,
 } from "@/components/currency-select";
 import { ErrorState, LoadingState } from "@/components/data-state";
+import {
+  ChoiceSelect as Choose,
+  FormField as Field,
+} from "@/components/form-layout";
 import { PageHeader } from "@/components/page-header";
 import { ProjectPackageActions } from "@/components/project-package-actions";
+import {
+  TemplatePanel,
+  TemplateRow,
+} from "@/components/project-template-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,14 +34,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMoney } from "@/lib/amount";
@@ -1240,152 +1230,5 @@ export default function ProjectDetail() {
         </DialogContent>
       </Dialog>
     </AppShell>
-  );
-}
-
-function TemplatePanel({
-  title,
-  note,
-  onAdd,
-  addLabel = "新增",
-  extraAction,
-  editable,
-  children,
-}: {
-  title: string;
-  note: string;
-  onAdd: () => void;
-  addLabel?: string;
-  extraAction?: React.ReactNode;
-  editable: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="panel p-6">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="font-semibold">{title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{note}</p>
-        </div>
-        {editable && (
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button variant="outline" onClick={onAdd}>
-              <Plus size={16} /> {addLabel}
-            </Button>
-            {extraAction}
-          </div>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
-function TemplateRow({
-  index,
-  title,
-  meta,
-  onMoveUp,
-  onMoveDown,
-  onEdit,
-  onRemove,
-}: {
-  index: number;
-  title: string;
-  meta: string;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  onEdit?: () => void;
-  onRemove?: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border p-4">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-xs">
-        {index}
-      </span>
-      <div className="min-w-0 flex-1">
-        <b className="text-sm">{title}</b>
-        <p className="mt-1 text-xs text-slate-500">{meta}</p>
-      </div>
-      {(onMoveUp || onMoveDown) && (
-        <div className="flex">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!onMoveUp}
-            onClick={onMoveUp}
-            title="上移"
-            aria-label={`上移：${title}`}
-          >
-            <ArrowUp size={15} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!onMoveDown}
-            onClick={onMoveDown}
-            title="下移"
-            aria-label={`下移：${title}`}
-          >
-            <ArrowDown size={15} />
-          </Button>
-        </div>
-      )}
-      {onEdit && (
-        <Button variant="outline" size="sm" onClick={onEdit}>
-          <Pencil size={15} /> 修改
-        </Button>
-      )}
-      {onRemove && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onRemove}
-          title="删除"
-          aria-label={`删除：${title}`}
-        >
-          <Trash2 size={16} />
-        </Button>
-      )}
-    </div>
-  );
-}
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
-function Choose({
-  value,
-  onChange,
-  items,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  items: string[][];
-  disabled?: boolean;
-}) {
-  return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="mt-2 w-full">
-        <SelectValue placeholder="请选择" />
-      </SelectTrigger>
-      <SelectContent>
-        {items.map(([key, label]) => (
-          <SelectItem key={key} value={key}>
-            {label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }

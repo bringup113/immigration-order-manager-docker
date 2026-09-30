@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  LoaderCircle,
   Pencil,
   Plus,
   ScanLine,
@@ -186,29 +185,6 @@ export function OrderDetailPeopleSection({
 
         {selectedApplicant && (
           <div className="min-w-0 space-y-5">
-            {scanningPassport && (
-              <div
-                className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"
-                role="status"
-                aria-live="polite"
-              >
-                <LoaderCircle
-                  className="shrink-0 animate-spin text-blue-600"
-                  size={22}
-                />
-
-                <div className="min-w-0">
-                  <p className="font-medium">
-                    正在识别护照 MRZ…
-                  </p>
-
-                  <p className="mt-0.5 text-xs text-blue-700">
-                    护照文件已上传，正在提取姓名、护照号码、出生日期和有效期，请稍候。
-                  </p>
-                </div>
-              </div>
-            )}
-
             <Panel
               title="身份与护照资料"
               action={
@@ -219,12 +195,7 @@ export function OrderDetailPeopleSection({
                     disabled={scanningPassport}
                     onClick={onScanPassport}
                   >
-                    {scanningPassport ? (
-                      <LoaderCircle className="animate-spin" size={15} />
-                    ) : (
-                      <ScanLine size={15} />
-                    )}{" "}
-                    {scanningPassport ? "正在识别…" : "识别当前护照"}
+                    <ScanLine size={15} /> 识别当前护照
                   </Button>
                 ) : null
               }

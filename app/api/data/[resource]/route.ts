@@ -18,7 +18,8 @@ import { FIELD_LIMITS, validateTextFields } from "@/lib/validation";
 import { orderScopeFilter } from "@/lib/order-access";
 import { getDataResourcePolicy } from "@/lib/data-resource-policy";
 import { readGlobalSearch } from "@/lib/global-search-query";
-import { readDashboard, type ReminderRange } from "@/lib/dashboard-query";
+import { readDashboard } from "@/lib/dashboard-query";
+import { parseDashboardRequest } from "@/lib/dashboard-request";
 import { readOrderCatalogs } from "@/lib/order-catalog-query";
 import {
   createProjectResource,
@@ -139,12 +140,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json(result.data);
   }
   if (resource === "dashboard") {
-    const requestedRange = request.nextUrl.searchParams.get("range");
-    const range: ReminderRange | undefined = requestedRange === "all" || requestedRange === "overdue" || requestedRange === "today" || requestedRange === "week" ? requestedRange : undefined;
-    const reminderPage = Math.min(100000, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") || "1", 10) || 1));
-    const reminderPageSize = Math.min(30, Math.max(5, Number.parseInt(request.nextUrl.searchParams.get("pageSize") || "30", 10) || 30));
-    const mobileSurface = request.nextUrl.searchParams.get("surface") === "mobile";
-    return NextResponse.json(await readDashboard(db, auth.user, range, reminderPage, reminderPageSize, mobileSurface));
+    const dashboardRequest = parseDashboardRequest(request.nextUrl.searchParams);
+    return NextResponse.json(
+      await readDashboard(
+        db,
+        auth.user,
+        dashboardRequest.range,
+        dashboardRequest.page,
+        dashboardRequest.pageSize,
+        dashboardRequest.mobileSurface,
+      ),
+    );
   }
   return jsonError("没有找到该数据模块。", 404);
 }

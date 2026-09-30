@@ -29,7 +29,7 @@ test(
   async () => {
     const cookie = await login();
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
-    const pendingResponses = [];
+    const jobs = new Map();
     let server;
 
     const upload = (bytes) => {
@@ -43,30 +43,50 @@ test(
     };
 
     try {
-      assert.equal((await upload(png)).status, 503);
+      const unavailable = await upload(png);
+      assert.equal(unavailable.status, 200);
+      assert.match(await unavailable.text(), /"type":"error"/);
       assert.equal((await upload(Buffer.alloc(20 * 1024 * 1024 + 1))).status, 413);
 
       server = createServer(async (request, response) => {
-        for await (const chunk of request) void chunk;
-        pendingResponses.push(response);
+        if (request.method === "POST" && request.url?.startsWith("/jobs")) {
+          for await (const chunk of request) void chunk;
+          const id = `job-${jobs.size + 1}`;
+          jobs.set(id, { completed: false });
+          response.writeHead(202, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ job_id: id, status: "queued" }));
+          return;
+        }
+        if (request.method === "GET" && request.url?.startsWith("/jobs/")) {
+          const id = request.url.slice("/jobs/".length);
+          const job = jobs.get(id);
+          if (!job) {
+            response.writeHead(404, { "Content-Type": "application/json" });
+            response.end(JSON.stringify({ error: "missing" }));
+            return;
+          }
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.end(JSON.stringify(job.completed
+            ? { job_id: id, status: "completed", result: { ok: true, mrz_detected: true, mrz_lines: ["P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<", "L898902C36UTO7408122F1204159ZE184226B<<<<<10"] } }
+            : { job_id: id, status: "recognizing", result: null }));
+          return;
+        }
+        response.writeHead(404).end();
       });
       await new Promise((resolve) => server.listen(9999, "0.0.0.0", resolve));
 
-      const first = upload(png);
-      const second = upload(png);
+      const first = await upload(png);
+      const second = await upload(png);
       const deadline = Date.now() + 5_000;
-      while (pendingResponses.length < 2 && Date.now() < deadline) {
+      while (jobs.size < 2 && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      assert.equal(pendingResponses.length, 2);
+      assert.equal(jobs.size, 2);
       assert.equal((await upload(png)).status, 429);
 
-      for (const response of pendingResponses) {
-        response.setHeader("Content-Type", "application/json");
-        response.end(JSON.stringify({ ok: true, mrz_detected: true }));
-      }
-      assert.equal((await first).status, 200);
-      assert.equal((await second).status, 200);
+      for (const job of jobs.values()) job.completed = true;
+      assert.match(await first.text(), /"type":"result"/);
+      assert.match(await second.text(), /"type":"result"/);
 
       if (uploadRoot) {
         const remaining = await readdir(`${uploadRoot}/.incoming`).catch((error) => {

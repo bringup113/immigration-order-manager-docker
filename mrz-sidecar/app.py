@@ -15,6 +15,7 @@ import resource
 import tempfile
 import threading
 import time
+import uuid
 from collections import deque
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
@@ -91,6 +92,7 @@ METRICS = Metrics()
 
 @dataclass
 class Job:
+    job_id: str
     path: Path
     content_type: str
     filename: str
@@ -98,6 +100,9 @@ class Job:
     submitted_at: float
     future: Future
     include_raw: bool = False
+    status: str = "queued"
+    result: dict[str, Any] | None = None
+    updated_at: float = 0.0
 
 
 class BoundedJobQueue:
@@ -143,6 +148,8 @@ class BoundedJobQueue:
 
 
 JOBS = BoundedJobQueue(MAX_WAITING, MAX_QUEUE_BYTES)
+JOB_RESULTS: dict[str, Job] = {}
+JOB_RESULTS_LOCK = threading.Lock()
 READY = threading.Event()
 STARTUP_ERROR: str | None = None
 SCANNER: Any = None
@@ -176,6 +183,9 @@ def read_image(path: Path) -> Any:
 def scan_job(job: Job) -> None:
     queue_wait_ms = (time.perf_counter() - job.submitted_at) * 1000
     started = time.perf_counter()
+    with JOB_RESULTS_LOCK:
+        job.status = "recognizing"
+        job.updated_at = time.monotonic()
     try:
         image = read_image(job.path)
         result = SCANNER(image, do_center_crop=CENTER_CROP, do_postprocess=POSTPROCESS)
@@ -199,17 +209,26 @@ def scan_job(job: Job) -> None:
         if isinstance(result, dict) and polygon is not None:
             payload["mrz_polygon"] = polygon.tolist() if hasattr(polygon, "tolist") else polygon
         METRICS.record(ok=ok, processing_ms=processing_ms, queue_wait_ms=queue_wait_ms)
+        with JOB_RESULTS_LOCK:
+            job.status = "completed"
+            job.result = payload
+            job.updated_at = time.monotonic()
         job.future.set_result(payload)
     except Exception as error:  # pragma: no cover - model/runtime dependent
         processing_ms = (time.perf_counter() - started) * 1000
         METRICS.record(ok=False, processing_ms=processing_ms, queue_wait_ms=queue_wait_ms)
-        job.future.set_result({
+        payload = {
             "ok": False,
             "mrz_detected": False,
             "error": f"{type(error).__name__}: {error}",
             "queue_wait_ms": round(queue_wait_ms, 2),
             "processing_ms": round(processing_ms, 2),
-        })
+        }
+        with JOB_RESULTS_LOCK:
+            job.status = "completed"
+            job.result = payload
+            job.updated_at = time.monotonic()
+        job.future.set_result(payload)
     finally:
         try:
             job.path.unlink(missing_ok=True)
@@ -222,7 +241,12 @@ def worker() -> None:
     while True:
         job = JOBS.get()
         if not READY.is_set():
-            job.future.set_result({"ok": False, "error": STARTUP_ERROR or "MRZScanner 尚未就绪。"})
+            payload = {"ok": False, "error": STARTUP_ERROR or "MRZScanner 尚未就绪。"}
+            with JOB_RESULTS_LOCK:
+                job.status = "completed"
+                job.result = payload
+                job.updated_at = time.monotonic()
+            job.future.set_result(payload)
             try:
                 job.path.unlink(missing_ok=True)
             finally:
@@ -269,10 +293,33 @@ class Handler(BaseHTTPRequestHandler):
                 "peak_rss_mb": peak_rss_mb(),
             })
             return
+        if path.startswith("/jobs/"):
+            job_id = path.removeprefix("/jobs/")
+            now = time.monotonic()
+            with JOB_RESULTS_LOCK:
+                expired = [key for key, item in JOB_RESULTS.items()
+                           if item.status == "completed" and now - item.updated_at > 300]
+                for key in expired:
+                    JOB_RESULTS.pop(key, None)
+                job = JOB_RESULTS.get(job_id)
+                payload = None if job is None else {
+                    "job_id": job.job_id,
+                    "status": job.status,
+                    "queue": JOBS.snapshot(),
+                    "result": job.result if job.status == "completed" else None,
+                }
+                if job is not None and job.status == "completed":
+                    JOB_RESULTS.pop(job_id, None)
+            if payload is None:
+                self.respond(404, {"error": "识别任务不存在或已经过期。"})
+            else:
+                self.respond(200, payload)
+            return
         self.respond(404, {"error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if urlparse(self.path).path != "/scan":
+        request_path = urlparse(self.path).path
+        if request_path not in {"/scan", "/jobs"}:
             self.respond(404, {"error": "Not found"})
             return
         if not READY.is_set():
@@ -309,6 +356,7 @@ class Handler(BaseHTTPRequestHandler):
                     remaining -= len(chunk)
             future: Future = Future()
             job = Job(
+                job_id=uuid.uuid4().hex,
                 path=path,
                 content_type=content_type,
                 filename=os.path.basename(self.headers.get("X-Filename", "upload")),
@@ -323,6 +371,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             enqueued = True
             METRICS.accepted += 1
+            if request_path == "/jobs":
+                with JOB_RESULTS_LOCK:
+                    JOB_RESULTS[job.job_id] = job
+                self.respond(202, {
+                    "job_id": job.job_id,
+                    "status": "queued",
+                    "queue": JOBS.snapshot(),
+                })
+                return
             try:
                 result = future.result(timeout=SCAN_TIMEOUT)
             except FutureTimeoutError:

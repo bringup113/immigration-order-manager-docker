@@ -11,6 +11,7 @@ import {
   normalizeOrderDetailTab,
   orderDetailHref,
 } from "../lib/order-navigation.ts";
+import { parseDashboardRequest } from "../lib/dashboard-request.ts";
 import { safeReturnPath } from "../lib/safe-return-path.ts";
 
 test("mobile routes stay on the mobile surface except for the explicit switch in My", () => {
@@ -52,6 +53,69 @@ test("mobile security stays mobile and PWA caching excludes business data", () =
   assert.match(worker, /fetch\(request\)\.catch\(\(\) => caches\.match\(OFFLINE_URL\)\)/);
   assert.doesNotMatch(worker, /skipWaiting/);
   assert.doesNotMatch(worker, /\/api\//);
+});
+
+test("mobile dashboard keeps reminder filters, pagination, and the lightweight query mode", () => {
+  assert.deepEqual(
+    parseDashboardRequest(
+      new URLSearchParams("range=overdue&page=3&pageSize=15&surface=mobile"),
+    ),
+    {
+      range: "overdue",
+      page: 3,
+      pageSize: 15,
+      mobileSurface: true,
+    },
+  );
+  assert.deepEqual(
+    parseDashboardRequest(
+      new URLSearchParams("range=invalid&page=-4&pageSize=200"),
+    ),
+    {
+      range: undefined,
+      page: 1,
+      pageSize: 30,
+      mobileSurface: false,
+    },
+  );
+
+  const route = readFileSync("app/api/data/[resource]/route.ts", "utf8");
+  assert.match(route, /parseDashboardRequest\(request\.nextUrl\.searchParams\)/);
+  assert.match(route, /dashboardRequest\.mobileSurface/);
+});
+
+test("passport upload reports real file, server, queue, and recognition stages", () => {
+  const newOrder = readFileSync("app/orders/new/page.tsx", "utf8");
+  const passportMrz = readFileSync("lib/passport-mrz.ts", "utf8");
+  const mrzRoute = readFileSync("app/api/mrz/scan/route.ts", "utf8");
+  const desktopMaterials = readFileSync("components/order-material-list.tsx", "utf8");
+  const desktopPeople = readFileSync("components/order-detail-people-section.tsx", "utf8");
+  const mobileMaterials = readFileSync("components/mobile/mobile-materials.tsx", "utf8");
+  const blockingOverlay = readFileSync("components/blocking-operation-overlay.tsx", "utf8");
+
+  assert.match(newOrder, /passportProgress\?: PassportScanProgress/);
+  assert.match(newOrder, /"正在上传…"/);
+  assert.match(newOrder, /正在解析 PDF/);
+  assert.match(passportMrz, /request\.upload\.addEventListener\("load"/);
+  assert.match(passportMrz, /stage: "receiving"/);
+  assert.match(mrzRoute, /stage: "validating"/);
+  assert.match(passportMrz, /stage: "pdf_parsing"/);
+  assert.match(passportMrz, /application\/x-ndjson|JSON\.parse\(line\)/);
+  assert.match(desktopMaterials, /"正在上传…"/);
+  assert.doesNotMatch(desktopPeople, /LoaderCircle|animate-spin/);
+  assert.match(mobileMaterials, /正在上传…/);
+  assert.match(mobileMaterials, /onProgress: \(progress\) => setScanProgress/);
+  for (const stage of ["archiving", "pdf_parsing", "image_preparing", "uploading", "receiving", "validating", "forwarding", "queued", "recognizing"])
+    assert.match(blockingOverlay, new RegExp(stage));
+  assert.match(passportMrz, /MRZ_MAX_PIXELS = 6_000_000/);
+  assert.match(passportMrz, /MRZ_TARGET_BYTES = 1_500_000/);
+  assert.match(passportMrz, /encodeMrzJpeg/);
+  assert.match(blockingOverlay, /elapsedTenths/);
+  assert.match(blockingOverlay, /stageElapsedTenths/);
+  assert.match(blockingOverlay, /本步骤/);
+  assert.match(blockingOverlay, /总计/);
+  assert.match(blockingOverlay, /onEscapeKeyDown=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.match(blockingOverlay, /onInteractOutside=\{\(event\) => event\.preventDefault\(\)\}/);
 });
 
 test("order module navigation only emits legal desktop and mobile links", () => {

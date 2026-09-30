@@ -152,7 +152,7 @@ export function OrderMaterialList({
                       >
                         <Upload size={14} />
                         {uploadingMaterialId === materialId
-                          ? "上传中…"
+                          ? "正在上传…"
                           : "上传文件"}
                       </label>
                       <input

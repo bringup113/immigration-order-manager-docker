@@ -4,4 +4,4 @@
 services:
   migra:
     ports: !override
-      - "${NAS_BIND_ADDRESS:-192.168.3.13}:${APP_PORT:-3000}:3000"
+      - "${NAS_BIND_ADDRESS:-192.168.124.88}:${APP_PORT:-3000}:3000"

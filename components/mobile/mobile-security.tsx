@@ -5,22 +5,18 @@ import { useEffect, useState } from "react";
 import { KeyRound, LogOut, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { useCurrentUser } from "@/components/current-user-provider";
 import { MobileCard, MobileMessage } from "@/components/mobile/mobile-states";
-import { fetchApiJson } from "@/lib/api-client";
-
-type SessionRow = {
-  id: string;
-  created_at: string;
-  last_seen_at: string;
-  expires_at: string;
-  ip: string | null;
-  user_agent: string | null;
-  is_current: number;
-};
-
-type MfaState = {
-  enabled: boolean;
-  required: boolean;
-};
+import {
+  type AccountMfaState,
+  type AccountSession,
+  beginAccountMfa,
+  changeAccountPassword,
+  enableAccountMfa,
+  loadAccountSecurity,
+  loadAccountSessions,
+  manageAccountMfa,
+  recoveryCodesFrom,
+  revokeAccountSessions,
+} from "@/lib/account-security-client";
 
 const inputClass = "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base outline-none focus:border-teal-600";
 const primaryButton = "min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-50";
@@ -43,7 +39,7 @@ export function MobileSecurity() {
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordError, setPasswordError] = useState(false);
 
-  const [mfa, setMfa] = useState<MfaState>({ enabled: user.mfaEnabled, required: user.mfaRequired });
+  const [mfa, setMfa] = useState<AccountMfaState>({ enabled: user.mfaEnabled, required: user.mfaRequired });
   const [mfaPassword, setMfaPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaSecret, setMfaSecret] = useState("");
@@ -54,27 +50,23 @@ export function MobileSecurity() {
   const [mfaMessage, setMfaMessage] = useState("");
   const [mfaError, setMfaError] = useState(false);
 
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessions, setSessions] = useState<AccountSession[]>([]);
   const [sessionsBusy, setSessionsBusy] = useState(false);
   const [sessionMessage, setSessionMessage] = useState("");
   const [sessionError, setSessionError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   async function loadSessions() {
-    const data = await fetchApiJson<{ sessions: SessionRow[] }>("/api/auth/sessions", { cache: "no-store" });
-    setSessions(data.sessions || []);
+    setSessions(await loadAccountSessions());
   }
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      fetchApiJson<MfaState>("/api/auth/mfa", { cache: "no-store" }),
-      fetchApiJson<{ sessions: SessionRow[] }>("/api/auth/sessions", { cache: "no-store" }),
-    ])
-      .then(([mfaResult, sessionResult]) => {
+    loadAccountSecurity()
+      .then(({ mfa: mfaResult, sessions: sessionResult }) => {
         if (!active) return;
         setMfa(mfaResult);
-        setSessions(sessionResult.sessions || []);
+        setSessions(sessionResult);
       })
       .catch((reason) => {
         if (!active) return;
@@ -95,11 +87,7 @@ export function MobileSecurity() {
     }
     setPasswordBusy(true);
     try {
-      await fetchApiJson("/api/auth/password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
+      await changeAccountPassword(currentPassword, newPassword);
       // Changing the password invalidates every session. Use a full document
       // navigation so the new login page cannot retain stale client state.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
@@ -112,24 +100,17 @@ export function MobileSecurity() {
     }
   }
 
-  async function postMfa(body: Record<string, unknown>) {
-    return fetchApiJson<Record<string, unknown>>("/api/auth/mfa", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  }
-
   async function beginMfa() {
     setMfaBusy(true);
     setMfaMessage("");
     setMfaError(false);
     setRecoveryCodes([]);
     try {
-      const data = await postMfa({
-        action: "begin",
-        ...(mfa.enabled ? { password: mfaPassword, currentCode: mfaCode } : {}),
-      });
+      const data = await beginAccountMfa(
+        mfa.enabled
+          ? { password: mfaPassword, currentCode: mfaCode }
+          : undefined,
+      );
       const secret = String(data.secret || "");
       const QRCode = (await import("qrcode")).default;
       setMfaSecret(secret);
@@ -155,8 +136,8 @@ export function MobileSecurity() {
     setMfaMessage("");
     setMfaError(false);
     try {
-      const data = await postMfa({ action: "enable", code: mfaCode, reauthToken: mfaReauthToken });
-      setRecoveryCodes(Array.isArray(data.recoveryCodes) ? data.recoveryCodes.map(String) : []);
+      const data = await enableAccountMfa(mfaCode, mfaReauthToken);
+      setRecoveryCodes(recoveryCodesFrom(data));
       setMfa({ enabled: true, required: false });
       setMfaSecret("");
       setMfaQrCode("");
@@ -177,7 +158,7 @@ export function MobileSecurity() {
     setMfaMessage("");
     setMfaError(false);
     try {
-      const data = await postMfa({ action, password: mfaPassword, code: mfaCode });
+      const data = await manageAccountMfa(action, mfaPassword, mfaCode);
       setMfaPassword("");
       setMfaCode("");
       if (action === "disable") {
@@ -186,7 +167,7 @@ export function MobileSecurity() {
         setMfaMessage("双重验证已关闭。");
         await refresh();
       } else {
-        setRecoveryCodes(Array.isArray(data.recoveryCodes) ? data.recoveryCodes.map(String) : []);
+        setRecoveryCodes(recoveryCodesFrom(data));
         setMfaMessage("恢复码已更新，旧恢复码全部失效。");
       }
     } catch (reason) {
@@ -202,11 +183,7 @@ export function MobileSecurity() {
     setSessionMessage("");
     setSessionError(false);
     try {
-      const data = await fetchApiJson<{ count: number }>("/api/auth/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, sessionId }),
-      });
+      const data = await revokeAccountSessions(action, sessionId);
       setSessionMessage(data.count ? `已注销 ${data.count} 个其他会话。` : "没有需要注销的其他会话。");
       await loadSessions();
     } catch (reason) {
