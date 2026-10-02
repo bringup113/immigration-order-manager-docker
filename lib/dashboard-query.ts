@@ -12,6 +12,7 @@ export async function readDashboard(
   reminderPage = 1,
   reminderPageSize = 30,
   mobileSurface = false,
+  includeSummary = true,
 ) {
   const sevenDays = "CURRENT_DATE + 7";
   const orderScope = orderScopeFilter(user, "o");
@@ -48,7 +49,7 @@ export async function readDashboard(
     : "TRUE";
   const [orders, outstanding, balance, reminders, reminderCounts, trend] =
     await Promise.all([
-      canReadOrders
+      canReadOrders && includeSummary
         ? db
             .prepare(
               `SELECT COUNT(*) AS value FROM orders o WHERE o.status IN ('ACTIVE','PAUSED') AND ${orderScope.sql}`,
@@ -56,7 +57,7 @@ export async function readDashboard(
             .bind(...orderScope.values)
             .first()
         : Promise.resolve(null),
-      canReadFinance
+      canReadFinance && includeSummary
         ? db
             .prepare(
               `WITH plans AS MATERIALIZED (
@@ -78,7 +79,7 @@ export async function readDashboard(
             .bind(...orderScope.values)
             .first()
         : Promise.resolve(null),
-      canReadFinance && !mobileSurface
+      canReadFinance && !mobileSurface && includeSummary
         ? db
             .prepare(
               `SELECT COALESCE(SUM(CASE WHEN e.direction='RECEIPT' THEN e.base_amount_minor ELSE -e.base_amount_minor END),0) AS value FROM order_cash_entries e JOIN orders o ON o.id=e.order_id WHERE e.status='ACTIVE' AND ${orderScope.sql}`,
@@ -93,7 +94,7 @@ export async function readDashboard(
         )
         .bind(...reminderScopeValues, reminderPageSize + 1, (reminderPage - 1) * reminderPageSize)
         .all(),
-      reminderRange
+      reminderRange && includeSummary
         ? db.prepare(`SELECT CURRENT_DATE::text AS today_key,
             COUNT(*) FILTER (WHERE due_date<CURRENT_DATE) AS overdue,
             COUNT(*) FILTER (WHERE due_date=CURRENT_DATE) AS today,
@@ -101,7 +102,7 @@ export async function readDashboard(
             FROM (${reminderSources}) scoped_reminders`)
             .bind(...reminderScopeValues).first()
         : Promise.resolve(null),
-      canReadFinance && !mobileSurface
+      canReadFinance && !mobileSurface && includeSummary
         ? db
             .prepare(
               `SELECT to_char(entry_date,'YYYY-MM') AS month,

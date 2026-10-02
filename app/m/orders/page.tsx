@@ -39,7 +39,7 @@ function MobileOrdersContent() {
   const agentId = params.get("agentId") || "";
   const relatedLabel = (params.get("relatedLabel") || "").slice(0, 120);
   const restored = useRef("");
-  const query = new URLSearchParams({ page: String(page), pageSize: "10", q, sort });
+  const query = new URLSearchParams({ page: String(page), pageSize: "10", q, sort, surface: "mobile" });
   if (status) query.set("status", status);
   if (projectId) query.set("projectId", projectId);
   if (agentId) query.set("agentId", agentId);

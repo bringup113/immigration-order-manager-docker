@@ -30,12 +30,16 @@ export async function readOrderDetail(
   const finance = section === "all" || section === "finance";
   const files =
     section === "all" || section === "people" || section === "common";
-  const includeMrz = !mobileSurface || section === "people" || section === "all";
-  const includeSteps = !mobileSurface || workflow || overview;
-  const includePlans = !mobileSurface || finance || overview;
-  const includeMaterials = !mobileSurface || files || overview;
-  const includeTotals = !mobileSurface || finance || overview;
-  const includeTasks = !mobileSurface || workflow || overview;
+  const canReadFinance = hasPermission(user, "finance.read");
+  const canWriteFinance = hasPermission(user, "finance.write");
+  const canReadMaterials = hasPermission(user, "materials.read");
+  const includeMrz = section === "people" || section === "all";
+  const includeSteps = workflow || overview;
+  // Desktop header cash actions need plan choices even outside the finance tab.
+  const includePlans = finance || overview || (!mobileSurface && canWriteFinance);
+  const includeMaterials = files || overview;
+  const includeTotals = canReadFinance && (!mobileSurface || finance || overview);
+  const includeTasks = workflow || overview;
   const closure = overview || section === "all" || params.get("closure") === "1";
   const historyPage = Math.max(
     1,
@@ -45,13 +49,11 @@ export async function readOrderDetail(
     1,
     Math.min(100000, parseInt(params.get("cashPage") || "1", 10) || 1),
   );
-  const canReadFinance = hasPermission(user, "finance.read");
-  const canWriteFinance = hasPermission(user, "finance.write");
-  const canReadMaterials = hasPermission(user, "materials.read");
   const [
     applicants,
     mrzRecords,
     steps,
+    stepSummary,
     plans,
     materials,
     materialFiles,
@@ -79,6 +81,11 @@ export async function readOrderDetail(
     includeSteps
       ? db.prepare("SELECT * FROM order_steps WHERE order_id=? ORDER BY sequence").bind(id).all()
       : Promise.resolve({ results: [] }),
+    !includeSteps && !mobileSurface
+      ? db.prepare(`SELECT COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE status IN ('COMPLETED','SKIPPED')) AS completed
+          FROM order_steps WHERE order_id=?`).bind(id).first()
+      : Promise.resolve(null),
     canReadFinance && includePlans
       ? db
           .prepare(
@@ -134,15 +141,16 @@ export async function readOrderDetail(
           .bind(id, (cashPage - 1) * 50)
           .all()
       : Promise.resolve({ results: [] }),
-    canReadFinance && includeTotals
+    includeTotals
       ? db
           .prepare(
             `SELECT
-      COALESCE(SUM(CASE WHEN direction='RECEIPT' THEN base_amount_minor ELSE 0 END),0) AS received_base_minor,
-      COALESCE(SUM(CASE WHEN direction='PAYMENT' THEN base_amount_minor ELSE 0 END),0) AS paid_base_minor
-      FROM order_cash_entries WHERE order_id=? AND status='ACTIVE'`,
+      COALESCE((SELECT SUM(planned_base_minor) FROM order_plans WHERE order_id=? AND plan_type='RECEIVABLE'),0) AS planned_receivable_base_minor,
+      COALESCE((SELECT SUM(planned_base_minor) FROM order_plans WHERE order_id=? AND plan_type='PAYABLE'),0) AS planned_payable_base_minor,
+      COALESCE((SELECT SUM(base_amount_minor) FROM order_cash_entries WHERE order_id=? AND direction='RECEIPT' AND status='ACTIVE'),0) AS received_base_minor,
+      COALESCE((SELECT SUM(base_amount_minor) FROM order_cash_entries WHERE order_id=? AND direction='PAYMENT' AND status='ACTIVE'),0) AS paid_base_minor`,
           )
-          .bind(id)
+          .bind(id, id, id, id)
           .first()
       : Promise.resolve(null),
     hasPermission(user, "tasks.read") && includeTasks
@@ -179,6 +187,12 @@ export async function readOrderDetail(
   ]);
   const receivedBaseMinor = Number(totals?.received_base_minor ?? 0);
   const paidBaseMinor = Number(totals?.paid_base_minor ?? 0);
+  const workflowTotalSteps = includeSteps
+    ? steps.results.length
+    : Number(stepSummary?.total ?? 0);
+  const workflowCompletedSteps = includeSteps
+    ? steps.results.filter((item) => item.status === "COMPLETED" || item.status === "SKIPPED").length
+    : Number(stepSummary?.completed ?? 0);
   const visibleClosureCheck = closureCheck
     ? {
         incompleteRequiredSteps: closureCheck.incompleteRequiredSteps,
@@ -200,6 +214,8 @@ export async function readOrderDetail(
     applicants: applicants.results,
     mrzRecords: mrzRecords.results,
     steps: steps.results,
+    workflowTotalSteps,
+    workflowCompletedSteps,
     plans: plans.results,
     materials: materials.results,
     materialFiles: materialFiles.results,
@@ -218,6 +234,8 @@ export async function readOrderDetail(
       ? {
           receivedBaseMinor,
           paidBaseMinor,
+          plannedReceivableBaseMinor: Number(totals?.planned_receivable_base_minor ?? 0),
+          plannedPayableBaseMinor: Number(totals?.planned_payable_base_minor ?? 0),
           balanceBaseMinor: receivedBaseMinor - paidBaseMinor,
         }
       : {}),

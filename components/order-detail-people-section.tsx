@@ -26,7 +26,6 @@ type MaterialHandlers = {
   onReplace: (fileId: string, storedName: string, file?: File) => void;
   onPreview: (file: Row) => void;
   onVoidFile: (fileId: string, storedName: string, version: number) => void;
-  onRestoreFile: (fileId: string, storedName: string, version: number) => void;
 };
 
 type Props = {
@@ -41,7 +40,6 @@ type Props = {
   canScanMrz: boolean;
   canReadMaterials: boolean;
   canWriteMaterials: boolean;
-  canRestoreMaterials: boolean;
   canDownloadMaterials: boolean;
   onAddApplicant: () => void;
   onSelectApplicant: (id: string) => void;
@@ -82,7 +80,6 @@ export function OrderDetailPeopleSection({
   canScanMrz,
   canReadMaterials,
   canWriteMaterials,
-  canRestoreMaterials,
   canDownloadMaterials,
   onAddApplicant,
   onSelectApplicant,
@@ -285,7 +282,6 @@ export function OrderDetailPeopleSection({
                 files={materialFiles}
                 uploadingMaterialId={uploadingMaterialId}
                 canEdit={canWriteMaterials}
-                canRestore={canRestoreMaterials}
                 canDownload={canDownloadMaterials}
                 {...materialHandlers}
               />

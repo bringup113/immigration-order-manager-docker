@@ -336,13 +336,9 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
     (item) => item.plan_type === "RECEIVABLE",
   );
   const payable = data.plans.filter((item) => item.plan_type === "PAYABLE");
-  const sum = (rows: Row[], key: string) =>
-    rows.reduce((total, row) => total + Number(row[key] || 0), 0);
-  const completedSteps = data.steps.filter(
-    (item) => item.status === "COMPLETED" || item.status === "SKIPPED",
-  ).length;
-  const workflowPercent = data.steps.length
-    ? Math.round((completedSteps / data.steps.length) * 100)
+  const completedSteps = data.workflowCompletedSteps;
+  const workflowPercent = data.workflowTotalSteps
+    ? Math.round((completedSteps / data.workflowTotalSteps) * 100)
     : 0;
   const applicantMaterials = data.materials.filter(
     (item) => item.applicant_id === selectedApplicant?.id,
@@ -353,7 +349,7 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
   );
 
   const expectedProfit =
-    sum(receivable, "planned_base_minor") - sum(payable, "planned_base_minor");
+    data.plannedReceivableBaseMinor - data.plannedPayableBaseMinor;
   const mainApplicant = String(
     data.applicants.find((item) => item.applicant_type === "MAIN")?.name ||
       "未填写主申请人",
@@ -528,7 +524,7 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
           <div>
             <p className="text-xs text-slate-500">办理流程</p>
             <p className="mt-1 font-semibold">
-              {completedSteps} / {data.steps.length} 步完成
+              {completedSteps} / {data.workflowTotalSteps} 步完成
             </p>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-200">
@@ -552,7 +548,7 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
         <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Metric
             label="计划应收"
-            value={formatMoney("USD", sum(receivable, "planned_base_minor"))}
+            value={formatMoney("USD", data.plannedReceivableBaseMinor)}
           />
           <Metric
             label="实际已收"
@@ -561,7 +557,7 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
           />
           <Metric
             label="计划应付"
-            value={formatMoney("USD", sum(payable, "planned_base_minor"))}
+            value={formatMoney("USD", data.plannedPayableBaseMinor)}
           />
           <Metric
             label="实际已付"
@@ -676,7 +672,6 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
             canScanMrz={can("applicants.mrz")}
             canReadMaterials={can("materials.read")}
             canWriteMaterials={can("materials.write")}
-            canRestoreMaterials={can("materials.restore")}
             canDownloadMaterials={can("materials.download")}
             onAddApplicant={() => openApplicant()}
             onSelectApplicant={setSelectedApplicantId}
@@ -693,15 +688,12 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
               onPreview: setPreviewFile,
               onVoidFile: (fileId, fileName, version) =>
                 changeMaterialFileStatus(fileId, fileName, version, "VOID"),
-              onRestoreFile: (fileId, fileName, version) =>
-                changeMaterialFileStatus(fileId, fileName, version, "RESTORE"),
             }}
           />
 
           <OrderDetailCommonSection
             canRead={can("materials.read")}
             canEdit={can("materials.write")}
-            canRestore={can("materials.restore")}
             canDownload={can("materials.download")}
             notice={fileNotice}
             materials={commonMaterials}
@@ -717,9 +709,6 @@ export function OrderDetail({ orderNo, initialTab = "workflow" }: { orderNo: str
             onPreview={setPreviewFile}
             onVoidFile={(fileId, fileName, version) =>
               changeMaterialFileStatus(fileId, fileName, version, "VOID")
-            }
-            onRestoreFile={(fileId, fileName, version) =>
-              changeMaterialFileStatus(fileId, fileName, version, "RESTORE")
             }
           />
         </Tabs>

@@ -649,10 +649,12 @@ test("cash entries can be voided and restored, and warning-only closure can be r
     assert.equal(fileRows.rows.find((file) => file.id === secondFileId).status, "ACTIVE");
     let response = await fetch(`${baseUrl}/api/material-files/${encodeURIComponent(secondFileId)}`, { method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ action: "VOID", reason: "文件版本测试作废", expectedVersion: 1 }) });
     assert.equal(response.status, 200, await response.text());
+    response = await fetch(`${baseUrl}/api/material-files/${encodeURIComponent(secondFileId)}`, { headers: { cookie } });
+    assert.equal(response.status, 410, await response.text());
     response = await fetch(`${baseUrl}/api/material-files/${encodeURIComponent(secondFileId)}`, { method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ action: "RESTORE", reason: "文件版本测试恢复", expectedVersion: 2 }) });
-    assert.equal(response.status, 200, await response.text());
+    assert.equal(response.status, 409, await response.text());
     fileRows = await database.query("SELECT id,status,sha256 FROM material_files WHERE id IN ($1,$2)", [firstFileId, secondFileId]);
-    assert.equal(fileRows.rows.find((file) => file.id === secondFileId).status, "ACTIVE");
+    assert.equal(fileRows.rows.find((file) => file.id === secondFileId).status, "VOIDED");
     assert.match(fileRows.rows.find((file) => file.id === secondFileId).sha256, /^[0-9a-f]{64}$/);
 
     await mutate({ action: "voidCashEntry", entryId: cashId, reason: "测试作废", expectedVersion: detail.order.version });

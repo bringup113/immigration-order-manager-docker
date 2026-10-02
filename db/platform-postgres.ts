@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import pg from "pg";
 import type { PoolClient, QueryResult } from "pg";
 import type { AppDatabase, AppPreparedStatement, DatabaseRow, DatabaseRunResult } from "./driver";
+import { queryIdentifier } from "../lib/query-observability";
 
 const { Pool, types } = pg;
 
@@ -58,7 +59,13 @@ class PostgresPreparedStatement implements AppPreparedStatement {
     } finally {
       const elapsed = Math.round(performance.now() - started);
       if (elapsed >= envInteger("DB_SLOW_QUERY_MS", 500, 1, 60000)) {
-        console.warn(JSON.stringify({ event: "slow_query", durationMs: elapsed, operation: this.sql.trim().split(/\s+/)[0], waiting: this.database.pool.waitingCount }));
+        console.warn(JSON.stringify({
+          event: "slow_query",
+          queryId: queryIdentifier(this.sql),
+          durationMs: elapsed,
+          operation: this.sql.trim().split(/\s+/)[0],
+          waiting: this.database.pool.waitingCount,
+        }));
       }
     }
   }

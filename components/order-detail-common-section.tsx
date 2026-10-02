@@ -7,7 +7,6 @@ import { TabsContent } from "@/components/ui/tabs";
 type Props = {
   canRead: boolean;
   canEdit: boolean;
-  canRestore: boolean;
   canDownload: boolean;
   notice: { text: string; error: boolean };
   materials: Row[];
@@ -20,13 +19,11 @@ type Props = {
   onReplace: (fileId: string, storedName: string, file?: File) => void;
   onPreview: (file: Row) => void;
   onVoidFile: (fileId: string, storedName: string, version: number) => void;
-  onRestoreFile: (fileId: string, storedName: string, version: number) => void;
 };
 
 export function OrderDetailCommonSection({
   canRead,
   canEdit,
-  canRestore,
   canDownload,
   notice,
   materials,
@@ -39,7 +36,6 @@ export function OrderDetailCommonSection({
   onReplace,
   onPreview,
   onVoidFile,
-  onRestoreFile,
 }: Props) {
   return (
     <TabsContent value="common" className="m-0 p-5">
@@ -51,7 +47,6 @@ export function OrderDetailCommonSection({
           files={files}
           uploadingMaterialId={uploadingMaterialId}
           canEdit={canEdit}
-          canRestore={canRestore}
           canDownload={canDownload}
           onAdd={onAdd}
           onEdit={onEdit}
@@ -60,7 +55,6 @@ export function OrderDetailCommonSection({
           onReplace={onReplace}
           onPreview={onPreview}
           onVoidFile={onVoidFile}
-          onRestoreFile={onRestoreFile}
         />
       ) : (
         <EmptyState

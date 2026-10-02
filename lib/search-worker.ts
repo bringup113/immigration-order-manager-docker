@@ -19,7 +19,7 @@ export async function processSearchJobs() {
           if (!lock?.acquired) return false;
           job = await db.prepare("SELECT entity_type,entity_id,requested_at::text AS requested_at FROM search_jobs WHERE available_at<=now() ORDER BY available_at,requested_at LIMIT 1").first<Job>();
           if (!job) return false;
-          if (job.entity_type === "order") await rebuildOrder(db, job.entity_id, job.requested_at);
+          if (job.entity_type === "order") await rebuildOrder(db, job.entity_id);
           else await rebuildEntity(db, job.entity_type, job.entity_id);
           // A concurrent edit bumps requested_at. Never acknowledge that newer request.
           await db.prepare("DELETE FROM search_jobs WHERE entity_type=? AND entity_id=? AND requested_at=?")

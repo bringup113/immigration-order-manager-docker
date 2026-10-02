@@ -21,17 +21,17 @@ docker stats --no-stream migra-order-manager migra-postgres migra-postgres-backu
 | 场景 | Compose 文件 | 浏览器地址 | 重要配置 |
 | --- | --- | --- | --- |
 | 本机使用 | `docker-compose.yml` | `http://127.0.0.1:3000` | 默认绑定本机；需要局域网访问时在 `.env` 填固定 `APP_BIND_ADDRESS` |
-| NAS + Lucky | 基础文件 + `docker-compose.nas.yml` | 内网 IP 的 HTTP、Lucky 域名的 HTTPS | `NAS_BIND_ADDRESS`、`APP_PORT`、完整 `APP_ORIGIN`；详见 [NAS 说明](NAS_ACCESS.md) |
+| NAS + Cloudflare Tunnel | 基础文件 + `docker-compose.nas.yml` | 内网 IP 的 HTTP、Tunnel 域名的 HTTPS | `NAS_BIND_ADDRESS`、`APP_PORT`、完整 `APP_ORIGIN`；详见 [NAS 说明](NAS_ACCESS.md) |
 | 自带 Caddy | 基础文件 + `docker-compose.public.yml` | 正式域名的 HTTPS | 设置 `MIGRA_DOMAIN`，由 Caddy 提供 80/443、证书与代理 |
 
-不使用 Lucky 时，自带 Caddy 的启动示例：
+不使用 Cloudflare Tunnel、改由项目自带 Caddy 时的启动示例：
 
 ```bash
 export MIGRA_DOMAIN=order.example.com
 docker compose -f docker-compose.yml -f docker-compose.public.yml up -d --build
 ```
 
-正式公网部署应使用有效 HTTPS、正式 Origin、独立强密码和系统所有者 MFA。不要对公网暴露 PostgreSQL 或 MRZ 容器端口。`docker-compose.public.yml` 会移除主应用和 PostgreSQL 的宿主机端口；NAS + Lucky 的内外网关系见 [NAS 说明](NAS_ACCESS.md)。
+正式公网部署应使用有效 HTTPS、正式 Origin、独立强密码和系统所有者 MFA。不要对公网暴露 PostgreSQL 或 MRZ 容器端口。`docker-compose.public.yml` 会移除主应用和 PostgreSQL 的宿主机端口；NAS + Cloudflare Tunnel 的内外网关系见 [NAS 说明](NAS_ACCESS.md)。
 
 ## 数据在哪里
 
@@ -59,13 +59,15 @@ docker compose -f docker-compose.yml -f docker-compose.public.yml up -d --build
 CONFIRM_RESTORE=YES ./scripts/restore-postgres.sh backups/postgres/migra-YYYYMMDD-HHMMSS.dump
 ```
 
-脚本先校验备份并停应用，然后用单事务恢复数据库，重新运行迁移和数据库权限设置，检查附件一致性，最后启动应用。数据库恢复或迁移失败时应用保持停止；附件缺失、孤儿文件、缺校验值、大小或哈希不一致时，数据库不会回滚，应用会启动，但脚本返回非零状态并保留 `data/file-integrity-report.json`。检查不会自动删除或修改附件。**仅有数据库备份无法找回丢失的文件内容**。
+脚本先校验备份并停应用，然后用单事务恢复数据库，重新运行迁移和数据库权限设置，检查附件一致性，最后启动应用。数据库恢复或迁移失败时应用保持停止；有效文件或被替换的历史版本缺失、出现孤儿文件、缺校验值、大小或哈希不一致时，数据库不会回滚，应用会启动，但脚本返回非零状态并保留 `data/file-integrity-report.json`。已作废记录只保留审计元数据，不要求实体文件存在。检查不会自动删除或修改附件。**仅有数据库备份无法找回丢失的文件内容**。
 
 ## 低资源配置
 
 搜索使用 PostgreSQL 持久化增量队列，业务变更先入队，后台单执行器处理；查询仍按用户权限和 `ALL` / `OWN` 订单范围校验。索引积压时搜索结果可能暂时落后，界面显示同步提示。列表由服务端分页，详情按模块和历史页读取；上传采用流式写入并计算 SHA-256，单文件最大 20 MiB。
 
 主应用默认数据库连接池为 5，连接等待 3 秒，SQL 默认超时 15 秒。低资源覆盖文件将应用限制在 768 MiB、数据库 640 MiB、备份 128 MiB，连接池降到 4；MRZ 继续使用基础 Compose 的 1536 MiB 内存上限、CPU 不限额。四个容器上限合计约 3 GiB，**上限不是常驻占用，也不代表完整系统通过 2 GiB 验证**。建议从 4 GiB 机器开始，在目标硬件上测峰值内存、磁盘和实际 MRZ 排队时间。
+
+超过 `DB_SLOW_QUERY_MS` 的数据库操作会记录稳定的 `queryId`、耗时、操作类型和连接等待数，不记录 SQL 参数或业务内容。可按 `queryId` 聚合日志定位重复慢查询；Docker 或直接部署的隔离压测方法见[性能基线](../tests/performance/README.md)。
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.low-resource.yml up -d

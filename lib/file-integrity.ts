@@ -4,7 +4,7 @@ import { relative, resolve, sep } from "node:path";
 import { getDatabase } from "@/db/database";
 import type { AppDatabase } from "@/db/driver";
 
-type FileRow = { id: string; relative_path: string; stored_name: string; size_bytes: number | string; sha256: string | null };
+type FileRow = { id: string; relative_path: string; stored_name: string; size_bytes: number | string; sha256: string | null; status: string };
 const YIELD_EVERY_FILES = 20;
 
 function yieldToRuntime() {
@@ -28,7 +28,9 @@ async function walk(directory: string): Promise<string[]> {
 
 export async function checkFileIntegrity(db: AppDatabase = getDatabase()) {
   const uploadRoot = resolve(process.env.UPLOAD_ROOT || resolve(process.cwd(), "data", "files"));
-  const rows = await db.prepare("SELECT id,relative_path,stored_name,size_bytes,sha256 FROM material_files ORDER BY relative_path").all<FileRow>();
+  const rows = await db.prepare("SELECT id,relative_path,stored_name,size_bytes,sha256,status FROM material_files ORDER BY relative_path").all<FileRow>();
+  const activeRows = rows.results.filter((row) => row.status === "ACTIVE");
+  const retainedRows = rows.results.filter((row) => row.status !== "VOIDED");
   const indexed = new Map(rows.results.map((row) => [String(row.relative_path), row]));
   const diskPaths = await walk(uploadRoot);
   const relativePaths = diskPaths.map((path) => relative(uploadRoot, path).split(sep).join("/")).sort();
@@ -38,7 +40,7 @@ export async function checkFileIntegrity(db: AppDatabase = getDatabase()) {
   const sizeMismatches: unknown[] = [];
   const hashMismatches: unknown[] = [];
 
-  for (const [index, row] of rows.results.entries()) {
+  for (const [index, row] of retainedRows.entries()) {
     const relativePath = String(row.relative_path);
     if (!diskSet.has(relativePath)) {
       missing.push({ id: row.id, relativePath, storedName: row.stored_name });
@@ -59,7 +61,7 @@ export async function checkFileIntegrity(db: AppDatabase = getDatabase()) {
   }));
   return {
     generatedAt: new Date().toISOString(),
-    summary: { databaseRecords: rows.results.length, diskFiles: relativePaths.length, missingFiles: missing.length, orphanFiles: orphans.length, missingChecksums: missingChecksums.length, sizeMismatches: sizeMismatches.length, hashMismatches: hashMismatches.length },
+    summary: { databaseRecords: rows.results.length, activeDatabaseRecords: activeRows.length, retainedFileRecords: retainedRows.length, voidedDatabaseRecords: rows.results.length - retainedRows.length, historicalDatabaseRecords: rows.results.length - activeRows.length, diskFiles: relativePaths.length, missingFiles: missing.length, orphanFiles: orphans.length, missingChecksums: missingChecksums.length, sizeMismatches: sizeMismatches.length, hashMismatches: hashMismatches.length },
     missing, orphans, missingChecksums, sizeMismatches, hashMismatches,
   };
 }

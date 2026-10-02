@@ -41,8 +41,10 @@ const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 
 try {
-  const result = await client.query(`SELECT id,order_id,material_id,stored_name,relative_path,mime_type,size_bytes,sha256,uploaded_at
+  const result = await client.query(`SELECT id,order_id,material_id,stored_name,relative_path,mime_type,size_bytes,sha256,uploaded_at,status
     FROM material_files ORDER BY relative_path`);
+  const activeRows = result.rows.filter((row) => row.status === "ACTIVE");
+  const retainedRows = result.rows.filter((row) => row.status !== "VOIDED");
   const indexed = new Map(result.rows.map((row) => [String(row.relative_path), row]));
   const diskPaths = await walk(uploadRoot);
   const diskRelativePaths = diskPaths.map((path) => posixRelative(uploadRoot, path)).sort();
@@ -52,7 +54,7 @@ try {
   const sizeMismatches = [];
   const hashMismatches = [];
 
-  for (const row of result.rows) {
+  for (const row of retainedRows) {
     const relativePath = String(row.relative_path);
     if (!diskSet.has(relativePath)) {
       missing.push({ id: row.id, relativePath, storedName: row.stored_name });
@@ -75,6 +77,10 @@ try {
     uploadRoot,
     summary: {
       databaseRecords: result.rows.length,
+      activeDatabaseRecords: activeRows.length,
+      retainedFileRecords: retainedRows.length,
+      voidedDatabaseRecords: result.rows.length - retainedRows.length,
+      historicalDatabaseRecords: result.rows.length - activeRows.length,
       diskFiles: diskRelativePaths.length,
       missingFiles: missing.length,
       orphanFiles: orphans.length,

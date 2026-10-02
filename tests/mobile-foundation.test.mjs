@@ -65,6 +65,7 @@ test("mobile dashboard keeps reminder filters, pagination, and the lightweight q
       page: 3,
       pageSize: 15,
       mobileSurface: true,
+      includeSummary: false,
     },
   );
   assert.deepEqual(
@@ -76,12 +77,14 @@ test("mobile dashboard keeps reminder filters, pagination, and the lightweight q
       page: 1,
       pageSize: 30,
       mobileSurface: false,
+      includeSummary: true,
     },
   );
 
   const route = readFileSync("app/api/data/[resource]/route.ts", "utf8");
   assert.match(route, /parseDashboardRequest\(request\.nextUrl\.searchParams\)/);
   assert.match(route, /dashboardRequest\.mobileSurface/);
+  assert.match(route, /dashboardRequest\.includeSummary/);
 });
 
 test("passport upload reports real file, server, queue, and recognition stages", () => {
@@ -189,6 +192,8 @@ test("mobile high-frequency actions use precise filters, pagination and mobile-s
   assert.match(home, /继续查看提醒/);
   assert.match(orders, /o\.project_id=\?/);
   assert.match(orders, /o\.agent_id=\?/);
+  assert.match(orders, /params\.get\("surface"\) === "mobile"/);
+  assert.match(orders, /hasPermission\(user, "finance\.read"\) && !mobileSurface/);
   assert.match(cash, /!h-dvh/);
   assert.match(workflow, /!h-dvh/);
   assert.match(materials, /上传材料/);

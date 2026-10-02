@@ -251,7 +251,6 @@ function OrderMaterialsPanel({
   files,
   uploadingMaterialId,
   canEdit,
-  canRestore,
   canDownload,
   onAdd,
   onEdit,
@@ -260,7 +259,6 @@ function OrderMaterialsPanel({
   onReplace,
   onPreview,
   onVoidFile,
-  onRestoreFile,
 }: {
   title: string;
   notice?: { text: string; error: boolean };
@@ -268,7 +266,6 @@ function OrderMaterialsPanel({
   files: Row[];
   uploadingMaterialId: string;
   canEdit: boolean;
-  canRestore: boolean;
   canDownload: boolean;
   onAdd: () => void;
   onEdit: (row: Row) => void;
@@ -277,7 +274,6 @@ function OrderMaterialsPanel({
   onReplace: (fileId: string, storedName: string, file?: File) => void;
   onPreview: (file: Row) => void;
   onVoidFile: (fileId: string, storedName: string, version: number) => void;
-  onRestoreFile: (fileId: string, storedName: string, version: number) => void;
 }) {
   return (
     <Panel title={title}>
@@ -287,7 +283,6 @@ function OrderMaterialsPanel({
         files={files}
         uploadingMaterialId={uploadingMaterialId}
         canEdit={canEdit}
-        canRestore={canRestore}
         canDownload={canDownload}
         onAdd={onAdd}
         onEdit={onEdit}
@@ -296,7 +291,6 @@ function OrderMaterialsPanel({
         onReplace={onReplace}
         onPreview={onPreview}
         onVoidFile={onVoidFile}
-        onRestoreFile={onRestoreFile}
       />
     </Panel>
   );

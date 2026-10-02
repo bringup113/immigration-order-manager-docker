@@ -36,7 +36,7 @@ function source(label: string, values: unknown[], tab: OrderDetailTab, domain: S
   return { label, text, tab, domain, search: compact(`${text} ${py.full} ${py.initials}`) };
 }
 
-export async function rebuildOrder(db: AppDatabase, orderId: string, sourceVersion: string) {
+export async function rebuildOrder(db: AppDatabase, orderId: string) {
   const [order, applicants, steps, plans, cash, materials, files, progress, tasks] = await Promise.all([
     db.prepare(`SELECT o.*,c.name AS agent_name,c.contact_name,c.phone,c.email,c.country_region,c.notes AS agent_notes,u.display_name AS owner_name,u.username AS owner_username
       FROM orders o JOIN agents c ON c.id=o.agent_id JOIN users u ON u.id=o.owner_user_id WHERE o.id=?`).bind(orderId).first(),
@@ -49,7 +49,7 @@ export async function rebuildOrder(db: AppDatabase, orderId: string, sourceVersi
       WHERE m.order_id=? ORDER BY m.applicant_id,m.sequence`).bind(orderId).all(),
     db.prepare(`SELECT f.*,m.name AS material_name,a.name AS applicant_name FROM material_files f
       JOIN order_materials m ON m.id=f.material_id LEFT JOIN order_applicants a ON a.id=m.applicant_id
-      WHERE f.order_id=? ORDER BY f.uploaded_at`).bind(orderId).all(),
+      WHERE f.order_id=? AND f.status='ACTIVE' ORDER BY f.uploaded_at`).bind(orderId).all(),
     db.prepare("SELECT * FROM order_progress WHERE order_id=? ORDER BY progress_date,created_at").bind(orderId).all(),
     db.prepare("SELECT t.*,u.display_name AS task_owner_name,u.username AS task_owner_username FROM order_tasks t JOIN users u ON u.id=t.owner_user_id WHERE t.order_id=? ORDER BY t.due_date,t.created_at").bind(orderId).all(),
   ]);
@@ -69,20 +69,17 @@ export async function rebuildOrder(db: AppDatabase, orderId: string, sourceVersi
     ...tasks.results.map((row: Row) => source(`待办：${row.title}`, [row.title, row.due_date, row.priority, row.status, row.task_owner_name, row.task_owner_username], "workflow", "tasks")),
   ].filter((item) => item.text);
 
-  const text = sources.map((item) => item.text).join("\n");
-  const py = { full: "", initials: "" }; // Each source already contains its phonetic forms.
-  const searchBlob = compact(`${text} ${py.full} ${py.initials} ${sources.map((item) => item.search).join(" ")}`);
   const domainBlob = (domain: SearchSource["domain"]) => compact(sources.filter((item) => item.domain === domain).map((item) => item.search).join(" "));
   const mainApplicant = applicants.results.find((row: Row) => row.applicant_type === "MAIN")?.name ?? null;
   const now = nowIso();
   await db.prepare(`INSERT INTO order_search_index
-    (order_id,order_no,agent_name,project_name,main_applicant,source_version,search_text,search_pinyin,search_initials,search_blob,search_order_blob,search_finance_blob,search_material_blob,search_task_blob,match_details,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET
+    (order_id,order_no,agent_name,project_name,main_applicant,search_order_blob,search_finance_blob,search_material_blob,search_task_blob,match_details,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET
     order_no=excluded.order_no,agent_name=excluded.agent_name,project_name=excluded.project_name,main_applicant=excluded.main_applicant,
-    source_version=excluded.source_version,search_text=excluded.search_text,search_pinyin=excluded.search_pinyin,
-    search_initials=excluded.search_initials,search_blob=excluded.search_blob,search_order_blob=excluded.search_order_blob,
-    search_finance_blob=excluded.search_finance_blob,search_material_blob=excluded.search_material_blob,search_task_blob=excluded.search_task_blob,match_details=excluded.match_details,updated_at=excluded.updated_at`)
-    .bind(orderId, order.order_no, order.agent_name, order.project_name_snapshot, mainApplicant, sourceVersion, text, py.full, py.initials, searchBlob,
+    search_order_blob=excluded.search_order_blob,search_finance_blob=excluded.search_finance_blob,
+    search_material_blob=excluded.search_material_blob,search_task_blob=excluded.search_task_blob,
+    match_details=excluded.match_details,updated_at=excluded.updated_at`)
+    .bind(orderId, order.order_no, order.agent_name, order.project_name_snapshot, mainApplicant,
       domainBlob("order"), domainBlob("finance"), domainBlob("materials"), domainBlob("tasks"), JSON.stringify(sources), now).run();
 }
 

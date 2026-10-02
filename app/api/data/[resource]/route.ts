@@ -149,6 +149,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         dashboardRequest.page,
         dashboardRequest.pageSize,
         dashboardRequest.mobileSurface,
+        dashboardRequest.includeSummary,
       ),
     );
   }

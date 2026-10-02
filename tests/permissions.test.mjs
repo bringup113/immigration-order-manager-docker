@@ -35,9 +35,9 @@ test("MRZ confirmation includes applicant, material, and order write access", ()
   assert.deepEqual(new Set(validPermissions(["applicants.mrz"])), new Set(["applicants.mrz", "applicants.write", "materials.write", "materials.read", "orders.write", "orders.read"]));
 });
 
-test("restoring historical finance and material records includes write and read access", () => {
+test("restoring historical finance records includes write and read access", () => {
   assert.deepEqual(new Set(validPermissions(["finance.restore"])), new Set(["finance.restore", "finance.write", "finance.read", "orders.read"]));
-  assert.deepEqual(new Set(validPermissions(["materials.restore"])), new Set(["materials.restore", "materials.write", "materials.read", "orders.read"]));
+  assert.deepEqual(validPermissions(["materials.restore"]), []);
 });
 
 test("file integrity checks use a dedicated read-only operations permission", () => {

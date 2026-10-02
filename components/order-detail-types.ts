@@ -83,6 +83,8 @@ export type OrderDetailData = {
   applicants: Row[];
   mrzRecords: Row[];
   steps: Row[];
+  workflowTotalSteps: number;
+  workflowCompletedSteps: number;
   plans: Row[];
   materials: Row[];
   materialFiles: Row[];
@@ -94,6 +96,8 @@ export type OrderDetailData = {
   closureHistory: Row[];
   receivedBaseMinor: number;
   paidBaseMinor: number;
+  plannedReceivableBaseMinor: number;
+  plannedPayableBaseMinor: number;
   balanceBaseMinor: number;
   availableCurrencies?: CurrencyOption[];
 };

@@ -1,4 +1,4 @@
-# NAS + Lucky 部署覆盖文件。
+# NAS + Cloudflare Tunnel 部署覆盖文件；cloudflared 由 NAS 自身管理。
 # NAS_BIND_ADDRESS 决定内网监听地址；APP_ORIGIN 仍在 .env 中填写公网 HTTPS 来源。
 # 应用会同时接受 APP_ORIGIN 和与当前请求 Host 相同的内网来源。
 services:

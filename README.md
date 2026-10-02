@@ -68,15 +68,15 @@ docker compose logs --tail=100 mrzscanner_poc
 docker compose up -d --build
 ```
 
-## NAS 内网与 Lucky 公网
+## NAS 内网与 Cloudflare Tunnel 公网
 
-同一套 NAS 容器可同时提供内网 HTTP 和 Lucky 代理的公网 HTTPS：
+同一套 NAS 容器可同时提供内网 HTTP 和 NAS 内置 `cloudflared` 提供的公网 HTTPS：
 
 ```mermaid
 flowchart LR
   I[内网浏览器] -->|内网 HTTP| M[MIGRA 应用]
-  P[公网浏览器] -->|公网 HTTPS| L[Lucky]
-  L -->|内网 HTTP| M
+  P[公网浏览器] -->|公网 HTTPS| L[Cloudflare Tunnel]
+  L -->|NAS 内部 HTTP| M
   M --> DB[(PostgreSQL)]
   M --> MRZ[MRZ 服务]
 ```
@@ -86,19 +86,19 @@ flowchart LR
 ```dotenv
 NAS_BIND_ADDRESS=192.168.124.88
 APP_PORT=3000
-APP_ORIGIN=https://你的正式域名:8888
+APP_ORIGIN=https://你的正式域名
 PUBLIC_DEPLOYMENT=1
 REQUIRE_PRIVILEGED_MFA=1
 ```
 
-`APP_ORIGIN` 是**公网浏览器地址的完整 origin**：带 `https://`，非标准端口要写端口，不带路径。内网 IP 不填进 `APP_ORIGIN`；直接打开 `http://NAS内网IP:3000` 仍可登录和使用。Lucky 的 HTTPS 前端指向 `http://NAS内网IP:3000`，传递原始 Host，并设置 `X-Forwarded-Proto: https`。公网模式要求系统所有者启用双重验证；内网和公网首次切换时需分别登录。
+`APP_ORIGIN` 是**公网浏览器地址的完整 origin**：带 `https://`，非标准端口才写端口，不带路径。内网 IP 不填进 `APP_ORIGIN`；直接打开 `http://NAS内网IP:3000` 仍可登录和使用。Cloudflare Tunnel 的公开主机名指向 `http://192.168.124.88:3000`，公网 TLS 由 Cloudflare 提供。公网模式要求系统所有者启用双重验证；内网和公网首次切换时需分别登录。
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.nas.yml ps
 ```
 
-具体填写示例、代理设置和排错见 [NAS 与 Lucky 部署说明](docs/NAS_ACCESS.md)。如果不用 Lucky、改由项目自带 Caddy 提供 HTTPS，见[部署与运维说明](docs/OPERATIONS.md)。
+具体填写示例、Tunnel 设置和排错见 [NAS 与 Cloudflare Tunnel 部署说明](docs/NAS_ACCESS.md)。如果改由项目自带 Caddy 提供 HTTPS，见[部署与运维说明](docs/OPERATIONS.md)。
 
 ## 数据与备份
 
@@ -131,9 +131,11 @@ npm test
 | 文档 | 适合什么时候看 |
 | --- | --- |
 | [移动工作台说明](docs/MOBILE_PWA_DEVELOPMENT_PLAN.md) | 手机页面、操作范围、PWA 与真机验收 |
-| [NAS 与 Lucky 部署说明](docs/NAS_ACCESS.md) | 配置内外网、域名、代理与双重验证 |
+| [NAS 与 Cloudflare Tunnel 部署说明](docs/NAS_ACCESS.md) | 配置内外网、域名、Tunnel 与双重验证 |
 | [部署与运维说明](docs/OPERATIONS.md) | 备份恢复、资源配置、运维命令与测试 |
 | [开发约束](docs/DEVELOPMENT.md) | 修改业务代码时的权限、事务、审计和 CI 规则 |
 | [当前验证记录](docs/CODE_QUALITY.md) | 当前源码的测试证据与已知边界 |
 | [MRZ 服务说明](docs/MRZ_SERVICE.md) | 识别参数、运行检查和性能边界 |
+| [隔离性能基线](tests/performance/README.md) | 在 Docker 或直接部署环境测量并发、搜索积压和 MRZ 影响 |
+| [当前性能结果](docs/PERFORMANCE_BASELINE.md) | 当前源码的应用并发、搜索和 MRZ 资源实测 |
 | [源码清理计划](docs/CODEBASE_CLEANUP_PLAN.md) | 查看本轮执行顺序和当前进度 |

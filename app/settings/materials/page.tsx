@@ -54,6 +54,10 @@ type IntegrityReport = {
   generatedAt: string;
   summary: {
     databaseRecords: number;
+    activeDatabaseRecords?: number;
+    retainedFileRecords?: number;
+    voidedDatabaseRecords?: number;
+    historicalDatabaseRecords?: number;
     diskFiles: number;
     missingFiles: number;
     orphanFiles: number;
@@ -374,6 +378,9 @@ export default function MaterialsPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {[
               ["数据库记录", integrity.summary.databaseRecords],
+              ["有效文件记录", integrity.summary.activeDatabaseRecords ?? integrity.summary.databaseRecords],
+              ["需保留实体文件", integrity.summary.retainedFileRecords ?? integrity.summary.databaseRecords],
+              ["已作废元数据", integrity.summary.voidedDatabaseRecords ?? 0],
               ["磁盘文件", integrity.summary.diskFiles],
               ["缺失文件", integrity.summary.missingFiles],
               ["孤儿文件", integrity.summary.orphanFiles],

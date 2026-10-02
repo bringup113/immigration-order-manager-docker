@@ -78,12 +78,16 @@ function MobileHomeContent() {
   useEffect(() => {
     if (!canReadDashboard) return;
     const controller = new AbortController();
-    fetchApiJson<Dashboard>(`/api/data/dashboard?range=${range}&page=${page}&pageSize=15&surface=mobile`, { cache: "no-store", signal: controller.signal })
+    fetchApiJson<Dashboard>(`/api/data/dashboard?range=${range}&page=${page}&pageSize=15&surface=mobile&summary=${page === 1 ? "1" : "0"}`, { cache: "no-store", signal: controller.signal })
       .then((result) => {
         setData((current) => {
           if (page === 1 || !current) return result;
           const seen = new Set(current.reminders.map(reminderKey));
-          return { ...result, reminders: [...current.reminders, ...result.reminders.filter((item) => !seen.has(reminderKey(item)))] };
+          return {
+            ...current,
+            reminders: [...current.reminders, ...result.reminders.filter((item) => !seen.has(reminderKey(item)))],
+            reminderPagination: result.reminderPagination,
+          };
         });
         setDisplayedRange(range);
         setError("");

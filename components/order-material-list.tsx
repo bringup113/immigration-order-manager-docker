@@ -9,7 +9,6 @@ import {
   LockKeyhole,
   Pencil,
   Plus,
-  RotateCcw,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -30,9 +29,7 @@ type Props = {
   onReplace: (fileId: string, storedName: string, file?: File) => void;
   onPreview: (file: MaterialRow) => void;
   onVoidFile: (fileId: string, storedName: string, version: number) => void;
-  onRestoreFile: (fileId: string, storedName: string, version: number) => void;
   canEdit?: boolean;
-  canRestore?: boolean;
   canDownload?: boolean;
 };
 
@@ -49,9 +46,7 @@ export function OrderMaterialList({
   onReplace,
   onPreview,
   onVoidFile,
-  onRestoreFile,
   canEdit,
-  canRestore,
   canDownload,
 }: Props) {
   const [ownPermissions, setOwnPermissions] = useState<string[]>([]);
@@ -65,7 +60,6 @@ export function OrderMaterialList({
   const has = (permission: string) =>
     ownPermissions.includes("*") || ownPermissions.includes(permission);
   const allowEdit = canEdit ?? has("materials.write");
-  const allowRestore = canRestore ?? has("materials.restore");
   const allowDownload = canDownload ?? has("materials.download");
   return (
     <div>
@@ -192,14 +186,14 @@ export function OrderMaterialList({
                         >
                           <History size={14} />
                           {historyOpen[materialId]
-                            ? "隐藏历史文件"
-                            : `查看历史文件（${historicalFiles.length}）`}
+                            ? "隐藏版本与作废记录"
+                            : `查看版本与作废记录（${historicalFiles.length}）`}
                         </Button>
                       </div>
                     )}
                     {visibleFiles.length === 0 && (
                       <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
-                        当前没有有效文件，可上传新文件或从历史中恢复。
+                        当前没有有效文件，请重新上传。
                       </p>
                     )}
                     {visibleFiles.map((file) => {
@@ -237,16 +231,18 @@ export function OrderMaterialList({
                               </p>
                             )}
                           </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onPreview(file)}
-                            title="预览文件"
-                          >
-                            <Eye size={15} />
-                          </Button>
-                          {allowDownload && (
+                          {file.status !== "VOIDED" && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onPreview(file)}
+                              title="预览文件"
+                            >
+                              <Eye size={15} />
+                            </Button>
+                          )}
+                          {allowDownload && file.status !== "VOIDED" && (
                             <Button asChild variant="ghost" size="icon">
                               <a
                                 href={`/api/material-files/${encodeURIComponent(String(file.id))}?download=1`}
@@ -299,23 +295,6 @@ export function OrderMaterialList({
                                 <Archive size={15} />
                               </Button>
                             </>
-                          )}
-                          {allowRestore && !active && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() =>
-                                onRestoreFile(
-                                  String(file.id),
-                                  String(file.stored_name),
-                                  Number(file.version || 1),
-                                )
-                              }
-                              title="恢复文件"
-                            >
-                              <RotateCcw size={15} />
-                            </Button>
                           )}
                         </div>
                       );

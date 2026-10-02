@@ -3,7 +3,12 @@ import { byteRange } from "@/lib/byte-range";
 import { acquireTransfer } from "@/lib/file-transfer";
 import { NextResponse } from "next/server";
 import { getDatabase, nowIso } from "@/db/database";
-import { openStoredFile } from "@/lib/file-storage";
+import {
+  deleteStoredFile,
+  moveStoredFile,
+  openStoredFile,
+  quarantineStoredFile,
+} from "@/lib/file-storage";
 import { DomainError } from "@/lib/domain";
 import { jsonError, requireApiUser, requireMutationUser } from "@/lib/api-auth";
 import { writeAudit, writeAuditBestEffort } from "@/lib/audit";
@@ -36,6 +41,8 @@ export async function GET(request: Request, context: Context) {
     const { id } = await context.params;
     const row = await fileRow(id, auth.user);
     if (!row) throw new DomainError("文件记录不存在。", 404);
+    if (row.status === "VOIDED")
+      throw new DomainError("该文件已作废，文件内容已经删除。", 410);
     release=acquireTransfer("download",8);
     file=await openStoredFile(String(row.relative_path));
     const stat=await file.stat();
@@ -77,15 +84,17 @@ export async function PATCH(request: Request, context: Context) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return jsonError("提交内容格式不正确。");
   const action = String(body.action || "").trim().toUpperCase();
-  const permission = action === "RESTORE" ? "materials.restore" : "materials.write";
-  const auth = await requireMutationUser(request, permission);
+  const auth = await requireMutationUser(request, "materials.write");
   if (auth.response) return auth.response;
-  const auditAction = action === "RESTORE" ? "MATERIAL_FILE_RESTORE" : "MATERIAL_FILE_VOID";
+  const fileMove: {
+    current: { originalPath: string; quarantinePath: string } | null;
+  } = { current: null };
   try {
     const { id } = await context.params;
-    if (!['VOID', 'RESTORE'].includes(action)) throw new DomainError("文件状态操作不正确。");
+    if (action !== "VOID")
+      throw new DomainError("作废文件内容会被永久删除，不能恢复；如需使用请重新上传。", 409);
     const reason = String(body.reason || "").trim();
-    if (!reason) throw new DomainError(action === "RESTORE" ? "恢复文件时必须填写原因。" : "作废文件时必须填写原因。");
+    if (!reason) throw new DomainError("作废文件时必须填写原因。");
     if (reason.length > 1_000) throw new DomainError("操作原因不能超过 1000 个字符。");
     await getDatabase().transaction(async (db) => {
       const scope = orderScopeFilter(auth.user, "o");
@@ -95,26 +104,34 @@ export async function PATCH(request: Request, context: Context) {
       if (!row) throw new DomainError("文件记录不存在。", 404);
       const expectedVersion = Number(body.expectedVersion);
       if (Number.isFinite(expectedVersion) && expectedVersion !== Number(row.version)) throw new DomainError("该文件状态已经变化，请刷新后重试。", 409);
-      if (action === "VOID" && row.status !== "ACTIVE") throw new DomainError("只有当前有效文件可以作废。");
-      if (action === "RESTORE" && row.status === "ACTIVE") throw new DomainError("该文件已经是有效状态。");
-      const nextStatus = action === "RESTORE" ? "ACTIVE" : "VOIDED";
+      if (row.status !== "ACTIVE") throw new DomainError("只有当前有效文件可以作废。");
+      const originalPath = String(row.relative_path);
+      const quarantinePath = await quarantineStoredFile(originalPath);
+      if (quarantinePath) fileMove.current = { originalPath, quarantinePath };
       const now = nowIso();
       await db.batch([
-        db.prepare("UPDATE material_files SET status=?,superseded_by_id=CASE WHEN ?='ACTIVE' THEN NULL ELSE superseded_by_id END,status_reason=?,status_changed_at=?,status_changed_by=?,version=version+1 WHERE id=?")
-          .bind(nextStatus, nextStatus, reason, now, auth.user.id, id),
+        db.prepare("UPDATE material_files SET status='VOIDED',status_reason=?,status_changed_at=?,status_changed_by=?,version=version+1 WHERE id=?")
+          .bind(reason, now, auth.user.id, id),
         db.prepare("UPDATE orders SET updated_at=? WHERE id=?").bind(now, row.order_id),
         ...(row.system_code === "PASSPORT_BIO_PAGE" && row.applicant_id
           ? [db.prepare("UPDATE order_applicants SET mrz_status='NOT_SCANNED',mrz_confirmed_at=NULL,mrz_confirmed_by=NULL WHERE id=? AND order_id=?")
               .bind(row.applicant_id, row.order_id)]
           : []),
       ]);
-      await writeAudit(request, auth.user, { action: auditAction, entityType: "MATERIAL_FILE", entityId: id, entityLabel: String(row.stored_name),
-        summary: `${action === "RESTORE" ? "恢复" : "作废"}材料文件 ${row.stored_name}`, changes: { before: row, after: { ...row, status: nextStatus, status_reason: reason }, reason } }, db);
+      await writeAudit(request, auth.user, { action: "MATERIAL_FILE_VOID", entityType: "MATERIAL_FILE", entityId: id, entityLabel: String(row.stored_name),
+        summary: `作废材料文件 ${row.stored_name}，并删除文件内容`, changes: { before: row, after: { ...row, status: "VOIDED", status_reason: reason }, reason } }, db);
     });
+    if (fileMove.current)
+      await deleteStoredFile(fileMove.current.quarantinePath).catch(console.error);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (fileMove.current)
+      await moveStoredFile(
+        fileMove.current.quarantinePath,
+        fileMove.current.originalPath,
+      ).catch(console.error);
     const { id } = await context.params;
-    await writeAuditBestEffort(request, auth.user, { action: auditAction, entityType: "MATERIAL_FILE", entityId: id, result: "FAILURE", summary: `尝试${action === "RESTORE" ? "恢复" : "作废"}材料文件`, changes: { submitted: body } });
+    await writeAuditBestEffort(request, auth.user, { action: "MATERIAL_FILE_VOID", entityType: "MATERIAL_FILE", entityId: id, result: "FAILURE", summary: "尝试作废材料文件", changes: { submitted: body } });
     return errorResponse(error);
   }
 }

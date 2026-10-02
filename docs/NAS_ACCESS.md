@@ -1,16 +1,16 @@
-# NAS 内网与 Lucky 公网访问配置
+# NAS 内网与 Cloudflare Tunnel 公网访问配置
 
-本项目支持同一套 NAS 容器同时从内网 IP 和 Lucky 公网域名访问。下面的 IP、域名和端口是当前环境的示例，迁移到另一台 NAS 时应替换成新环境的实际值：
+本项目支持同一套 NAS 容器同时从内网 IP 和 NAS 内置 `cloudflared` 的公网域名访问。当前环境为：
 
 - 内网：`http://192.168.124.88:3000`
-- 公网：`https://order.tcvisa.vip:8888`
-- Lucky 后端：`http://192.168.124.88:3000`
+- 公网：`https://order.tcvisa.vip`
+- Tunnel 服务地址：`http://192.168.124.88:3000`
 
 ```mermaid
 flowchart LR
   A[内网浏览器] -->|内网 HTTP| M[MIGRA 应用]
-  B[外网浏览器] -->|公网 HTTPS| L[Lucky]
-  L -->|内网 HTTP| M
+  B[外网浏览器] -->|公网 HTTPS| L[Cloudflare Tunnel]
+  L -->|NAS 内部 HTTP| M
   M --> D[(PostgreSQL)]
   M --> R[MRZ sidecar]
 ```
@@ -22,7 +22,7 @@ flowchart LR
 ```dotenv
 NAS_BIND_ADDRESS=192.168.124.88
 APP_PORT=3000
-APP_ORIGIN=https://order.tcvisa.vip:8888
+APP_ORIGIN=https://order.tcvisa.vip
 PUBLIC_DEPLOYMENT=1
 REQUIRE_PRIVILEGED_MFA=1
 ```
@@ -32,7 +32,7 @@ REQUIRE_PRIVILEGED_MFA=1
 | 配置 | 填写内容 | 作用 |
 | --- | --- | --- |
 | `NAS_BIND_ADDRESS` | NAS 固定内网 IP | 决定 Docker 只监听哪一个内网地址 |
-| `APP_PORT` | NAS 应用端口 | 与内网访问地址和 Lucky 后端端口一致 |
+| `APP_PORT` | NAS 应用端口 | 与内网访问地址和 Tunnel 服务端口一致 |
 | `APP_ORIGIN` | 完整公网 HTTPS origin | 校验公网登录和写入请求；非标准端口必须填写 |
 | `PUBLIC_DEPLOYMENT` | `1` | 启用公网安全策略 |
 | `REQUIRE_PRIVILEGED_MFA` | `1` | 兼容旧配置名称；当前只强制系统所有者启用 MFA |
@@ -40,19 +40,19 @@ REQUIRE_PRIVILEGED_MFA=1
 `APP_ORIGIN` 的正确形式是“协议 + 域名 + 可选端口”，例如：
 
 ```text
-https://order.tcvisa.vip:8888
+https://order.tcvisa.vip
 ```
 
 不要填写以下内容：
 
 ```text
-order.tcvisa.vip:8888                 # 缺少 https://
-https://order.tcvisa.vip:8888/login   # 包含路径
+order.tcvisa.vip                      # 缺少 https://
+https://order.tcvisa.vip/login        # 包含路径
 http://192.168.124.88:3000            # 这是内网入口，不是正式公网来源
 http://0.0.0.0:3000                   # 0.0.0.0 不是浏览器访问地址
 ```
 
-如果将来外网改为标准 HTTPS 443 端口，则填写 `https://order.tcvisa.vip`，不需要写 `:443`。如果域名或 Lucky 外网端口变化，先修改 `APP_ORIGIN`，再重新创建应用容器。
+标准 HTTPS 443 不需要显式端口。如果将来公网域名或端口变化，先修改 `APP_ORIGIN`，再重新创建应用容器。
 
 ## 为什么只填公网地址，内网仍能使用
 
@@ -65,24 +65,22 @@ http://0.0.0.0:3000                   # 0.0.0.0 不是浏览器访问地址
 
 因此内网用户直接打开 `http://192.168.124.88:3000` 即可登录和使用全部已授权功能，不需要把内网地址并入 `APP_ORIGIN`。公网和内网会分别保存 Cookie，第一次从另一个入口进入时需要重新登录。
 
-## Lucky 怎么填写
+## Cloudflare Tunnel 怎么填写
 
-Web 服务保持以下关系：
+在 NAS 内置 Cloudflare Tunnel 中添加公开主机名：
 
 | 项目 | 值 |
 | --- | --- |
-| 前端地址 | `https://order.tcvisa.vip:8888` |
-| 后端地址 | `http://192.168.124.88:3000` |
-| HTTP 跳转 | 跳转到同一域名的 HTTPS 8888 |
-| 原始 Host | 传递给后端 |
-| `X-Forwarded-Host` | 传递外部请求的原始主机名与端口 |
-| `X-Forwarded-Proto` | `https` |
+| 公开主机名 | `order.tcvisa.vip` |
+| 服务类型 | HTTP |
+| 服务地址 | `192.168.124.88:3000` |
+| 公网协议 | HTTPS，由 Cloudflare 提供证书 |
 
-Lucky 负责公网 TLS 证书，主应用容器继续使用内网 HTTP。PostgreSQL 和 MRZ 服务不应暴露给公网。
+`cloudflared` 从 NAS 主动连接 Cloudflare，不需要把 3000 端口映射到公网路由器。主应用继续使用内网 HTTP；PostgreSQL 的 54329 和 MRZ 的 8090 都不得配置为 Tunnel 公开服务。
 
 ## 部署与更新
 
-NAS + Lucky 固定使用基础 Compose 和 NAS 覆盖文件：
+NAS + Cloudflare Tunnel 固定使用基础 Compose 和 NAS 覆盖文件；`cloudflared` 由 NAS 管理，不加入本项目 Compose：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
@@ -112,7 +110,7 @@ curl -I http://192.168.124.88:3000/
 公网登录页：
 
 ```bash
-curl -I https://order.tcvisa.vip:8888/api/auth/login
+curl -I https://order.tcvisa.vip/api/auth/login
 ```
 
 两边都应返回正常页面或跳转到登录页，不应再出现“已拒绝来自其他网站的登录请求”。如果只在公网失败，先核对 `APP_ORIGIN` 是否与浏览器地址的协议、域名和端口完全一致；如果只在内网失败，核对访问地址是否与 `NAS_BIND_ADDRESS`、`APP_PORT` 一致。

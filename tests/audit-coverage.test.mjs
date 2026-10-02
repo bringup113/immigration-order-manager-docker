@@ -75,8 +75,8 @@ test("file lifecycle and integrity checks are audited", () => {
   const restore = readFileSync("scripts/restore-postgres.sh", "utf8");
   for (const action of ["MATERIAL_FILE_UPLOAD", "MATERIAL_FILE_REPLACE"])
     assert.match(upload, new RegExp(action));
-  for (const action of ["MATERIAL_FILE_VOID", "MATERIAL_FILE_RESTORE"])
-    assert.match(lifecycle, new RegExp(action));
+  assert.match(lifecycle, /MATERIAL_FILE_VOID/);
+  assert.doesNotMatch(lifecycle, /MATERIAL_FILE_RESTORE/);
   assert.match(integrity, /requireApiUser\("system\.file_integrity"\)/);
   assert.match(integrity, /FILE_INTEGRITY_CHECK/);
   assert.match(restore, /'FILE_INTEGRITY_CHECK','SYSTEM','FAILURE'/);

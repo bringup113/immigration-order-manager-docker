@@ -191,21 +191,16 @@ export function useOrderPeopleMaterials({
     fileId: string,
     fileName: string,
     version: number,
-    action: "VOID" | "RESTORE",
+    action: "VOID",
   ) {
-    const restoring = action === "RESTORE";
     askConfirmation({
-      title: restoring ? "恢复历史文件" : "作废材料文件",
-      description: restoring
-        ? `确定恢复“${fileName}”吗？恢复后它会重新显示为当前有效文件。`
-        : `确定作废“${fileName}”吗？文件不会物理删除，可在历史文件中查看或恢复。`,
-      confirmLabel: restoring ? "确认恢复" : "确认作废",
-      pendingLabel: restoring ? "正在恢复…" : "正在作废…",
-      destructive: !restoring,
-      reasonLabel: restoring ? "恢复原因" : "作废原因",
-      reasonPlaceholder: restoring
-        ? "请填写恢复该文件的原因"
-        : "请填写作废该文件的原因",
+      title: "作废材料文件",
+      description: `确定作废“${fileName}”吗？文件内容会被永久删除，只保留文件名、时间和作废原因等审计记录，无法恢复。`,
+      confirmLabel: "确认作废并删除",
+      pendingLabel: "正在作废…",
+      destructive: true,
+      reasonLabel: "作废原因",
+      reasonPlaceholder: "请填写作废该文件的原因",
       onConfirm: async (reason) => {
         const response = await fetch(
           `/api/material-files/${encodeURIComponent(fileId)}`,
@@ -217,9 +212,9 @@ export function useOrderPeopleMaterials({
         );
         const result = await response.json();
         if (!response.ok)
-          throw new Error(result.error || `${restoring ? "恢复" : "作废"}失败`);
+          throw new Error(result.error || "作废失败");
         setFileNotice({
-          text: `${fileName} 已${restoring ? "恢复" : "作废"}。`,
+          text: `${fileName} 已作废，文件内容已删除。`,
           error: false,
         });
         await load();

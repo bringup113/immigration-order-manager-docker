@@ -19,6 +19,7 @@ export async function listOrders(
   const scope = orderScopeFilter(user, "o");
   const page = Math.min(100000, Math.max(1, parseInt(params.get("page") || "1", 10) || 1));
   const pageSize = Math.min(100, Math.max(1, parseInt(params.get("pageSize") || "30", 10) || 30));
+  const mobileSurface = params.get("surface") === "mobile";
   const values: unknown[] = [...scope.values];
   const filters = [scope.sql];
   if (params.get("owner")) { filters.push("o.owner_user_id=?"); values.push(params.get("owner")); }
@@ -32,7 +33,7 @@ export async function listOrders(
     filters.push(`EXISTS (SELECT 1 FROM order_search_index i WHERE i.order_id=o.id AND (${domains.map((field) => `i.${field} LIKE ?`).join(" OR ")}))`);
     values.push(...domains.map(() => likePattern(term)));
   }
-  const finance = hasPermission(user, "finance.read");
+  const finance = hasPermission(user, "finance.read") && !mobileSurface;
 
 const countRow = await db
   .prepare(`SELECT COUNT(*) AS total FROM orders o WHERE ${filters.join(" AND ")}`)
@@ -58,6 +59,8 @@ const totalPages = Math.max(1, Math.ceil(total / pageSize));
       ${finance ? `LEFT JOIN LATERAL (SELECT COALESCE(SUM(planned_base_minor) FILTER(WHERE plan_type='RECEIVABLE'),0) AS receivable_base_minor,COALESCE(SUM(planned_base_minor) FILTER(WHERE plan_type='PAYABLE'),0) AS payable_base_minor FROM order_plans WHERE order_id=o.id) plans ON TRUE
       LEFT JOIN LATERAL (SELECT COALESCE(SUM(base_amount_minor) FILTER(WHERE direction='RECEIPT'),0) AS received_base_minor,COALESCE(SUM(base_amount_minor) FILTER(WHERE direction='PAYMENT'),0) AS paid_base_minor FROM order_cash_entries WHERE order_id=o.id AND status='ACTIVE') cash ON TRUE` : ""}
       ORDER BY ${sortSql}`).bind(...values,pageSize+1,(page-1)*pageSize).all<OrderListRow>();
-  const owners = await db.prepare(`SELECT u.id,u.display_name AS name,u.username FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.owner_user_id=u.id AND ${scope.sql}) ORDER BY u.display_name,u.id`).bind(...scope.values).all<OrderListOwner>();
+  const owners = mobileSurface
+    ? { results: [] as OrderListOwner[] }
+    : await db.prepare(`SELECT u.id,u.display_name AS name,u.username FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.owner_user_id=u.id AND ${scope.sql}) ORDER BY u.display_name,u.id`).bind(...scope.values).all<OrderListOwner>();
   return { rows: rows.results.slice(0,pageSize),page,pageSize,total,totalPages,hasMore: rows.results.length>pageSize,owners: owners.results };
 }

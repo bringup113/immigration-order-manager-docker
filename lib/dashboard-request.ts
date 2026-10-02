@@ -5,6 +5,7 @@ export type DashboardRequest = {
   page: number;
   pageSize: number;
   mobileSurface: boolean;
+  includeSummary: boolean;
 };
 
 export function parseDashboardRequest(searchParams: Pick<URLSearchParams, "get">): DashboardRequest {
@@ -17,12 +18,13 @@ export function parseDashboardRequest(searchParams: Pick<URLSearchParams, "get">
       ? requestedRange
       : undefined;
 
+  const page = Math.min(
+    100_000,
+    Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1),
+  );
   return {
     range,
-    page: Math.min(
-      100_000,
-      Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1),
-    ),
+    page,
     pageSize: Math.min(
       30,
       Math.max(
@@ -31,5 +33,6 @@ export function parseDashboardRequest(searchParams: Pick<URLSearchParams, "get">
       ),
     ),
     mobileSurface: searchParams.get("surface") === "mobile",
+    includeSummary: searchParams.get("summary") !== "0" && page === 1,
   };
 }
